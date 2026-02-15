@@ -145,7 +145,7 @@ class DataFixer {
             direction: props.direction || 0,
             speed: props.speed || 0,
             country: props.country || '',
-            affectedCountries: props.affectedcountries || [],
+            affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
             fromDate: props.fromdate,
             toDate: props.todate,
             source: 'GDACS'
@@ -185,6 +185,29 @@ class DataFixer {
     if (windSpeed >= 119) return 'Category 1';
     if (windSpeed >= 63) return 'Tropical Storm';
     return 'Tropical Depression';
+  }
+
+  // Normalize GDACS affectedcountries (may be objects or strings) into plain string array
+  normalizeAffectedCountries(affectedcountries, fallbackCountry) {
+    if (!affectedcountries) {
+      return fallbackCountry ? [fallbackCountry] : [];
+    }
+    if (typeof affectedcountries === 'string') {
+      return affectedcountries.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (Array.isArray(affectedcountries)) {
+      const names = affectedcountries
+        .map(entry => {
+          if (typeof entry === 'string') return entry;
+          if (typeof entry === 'object' && entry) {
+            return entry.countryname || entry.country_name || entry.name || entry.iso3 || null;
+          }
+          return null;
+        })
+        .filter(Boolean);
+      return names.length > 0 ? names : (fallbackCountry ? [fallbackCountry] : []);
+    }
+    return fallbackCountry ? [fallbackCountry] : [];
   }
 
   // Fix Space Weather Data

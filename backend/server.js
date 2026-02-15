@@ -860,8 +860,8 @@ class DisasterDataAggregator {
           pressure: parseInt(props.pressure || 0) || 1000,
           direction: props.direction || 0,
           speed: props.speed || 0,
-          country: props.country || props.affectedcountries?.[0] || 'Ocean',
-          affectedCountries: props.affectedcountries || [props.country] || [],
+          country: props.country || this.extractCountryName(props.affectedcountries?.[0]) || 'Ocean',
+          affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
           population: parseInt(props.population || 0),
           fromDate: props.fromdate,
           toDate: props.todate,
@@ -899,6 +899,35 @@ class DisasterDataAggregator {
     if (windSpeed >= 119) return 'Category 1';
     if (windSpeed >= 63) return 'Tropical Storm';
     return 'Tropical Depression';
+  }
+
+  // Extract a country name from a GDACS country entry (could be string or object)
+  extractCountryName(entry) {
+    if (!entry) return null;
+    if (typeof entry === 'string') return entry;
+    if (typeof entry === 'object') {
+      return entry.countryname || entry.country_name || entry.name || entry.iso3 || null;
+    }
+    return null;
+  }
+
+  // Normalize GDACS affectedcountries array (may contain objects or strings) into plain string array
+  normalizeAffectedCountries(affectedcountries, fallbackCountry) {
+    if (!affectedcountries) {
+      return fallbackCountry ? [fallbackCountry] : [];
+    }
+    // If it's already a string (comma-separated), split it
+    if (typeof affectedcountries === 'string') {
+      return affectedcountries.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    // If it's an array, extract names from each entry
+    if (Array.isArray(affectedcountries)) {
+      const names = affectedcountries
+        .map(entry => this.extractCountryName(entry))
+        .filter(Boolean);
+      return names.length > 0 ? names : (fallbackCountry ? [fallbackCountry] : []);
+    }
+    return fallbackCountry ? [fallbackCountry] : [];
   }
 
   // Transform GDACS Drought Data (with proper filtering)

@@ -1056,7 +1056,7 @@ const PopupContent = ({ item, type, config }) => {
             {item.affectedCountries?.length > 0 && (
               <div className="detail-row">
                 <strong>Affected Areas:</strong> 
-                <span className="detail-value">{item.affectedCountries.join(', ')}</span>
+                <span className="detail-value">{item.affectedCountries.map(c => typeof c === 'object' ? (c.countryname || c.name || c.iso3 || '') : c).filter(Boolean).join(', ')}</span>
               </div>
             )}
             {item.population > 0 && (
