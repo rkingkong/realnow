@@ -615,54 +615,132 @@ class DisasterDataAggregator {
     };
   }
 
-  // Transform GDACS Wildfire Data (with proper filtering)
-  transformGDACSWildfires(data) {
-    console.log('🔥 Processing GDACS wildfires...');
-    
-    if (!data?.features) {
-      console.log('No GDACS wildfire data received');
-      return null;
+  computeEventStatus(props) {
+    const now = new Date();
+    const fromDate = props.fromdate ? new Date(props.fromdate) : null;
+    const toDate = props.todate ? new Date(props.todate) : null;
+    const isCurrent = props.iscurrent === 'true' || props.iscurrent === true;
+
+    let isActive = true;
+    let status = 'active';
+    let daysSinceStart = null;
+    let daysSinceEnd = null;
+    let freshness = 'current';
+
+    if (fromDate) {
+      daysSinceStart = Math.floor((now - fromDate) / (1000 * 60 * 60 * 24));
     }
 
-    // Data should already be filtered by transformGDACSSplitData
-    const wildfires = data.features
-      .filter(f => f.properties && f.geometry?.coordinates)
-      .map(f => {
-        const props = f.properties;
-        const coords = f.geometry.coordinates;
-        
-        return {
-          id: `gdacs_wf_${props.eventid || Math.random()}`,
-          type: 'wildfire',
-          name: props.eventname || props.name || 'Wildfire',
-          coordinates: coords,
-          latitude: coords[1],
-          longitude: coords[0],
-          alertLevel: props.alertlevel || 'Green',
-          alertScore: parseInt(props.alertscore || 0),
-          severity: props.severitydata?.severity || props.severity || 'Unknown',
-          affectedArea: parseInt(props.affectedarea || 0),
-          country: props.country || props.countryname || '',
-          population: parseInt(props.population || 0),
-          fromDate: props.fromdate,
-          toDate: props.todate,
-          duration: parseInt(props.duration || 0),
-          source: 'GDACS',
-          description: props.description || props.eventname || '',
-          url: props.url || '',
-          episodeId: props.episodeid || ''
-        };
-      });
+    if (toDate) {
+      if (toDate.getTime() < now.getTime()) {
+        daysSinceEnd = Math.floor((now - toDate) / (1000 * 60 * 60 * 24));
+        isActive = false;
+        status = daysSinceEnd <= 1 ? 'just_ended' : 'ended';
+      }
+    }
 
-    console.log(`✅ Processed ${wildfires.length} wildfires from GDACS`);
-    
-    return {
-      type: 'wildfires',
-      timestamp: new Date().toISOString(),
-      count: wildfires.length,
-      features: wildfires
-    };
+    // If GDACS says it's current, trust that
+    if (isCurrent) {
+      isActive = true;
+      status = 'active';
+    }
+
+    // Compute freshness based on last update
+    const lastUpdate = props.lastupdate || props.modified || null;
+    if (lastUpdate) {
+      const hoursSinceUpdate = (now - new Date(lastUpdate)) / (1000 * 60 * 60);
+      if (hoursSinceUpdate <= 6) freshness = 'current';
+      else if (hoursSinceUpdate <= 24) freshness = 'recent';
+      else if (hoursSinceUpdate <= 72) freshness = 'aging';
+      else freshness = 'stale';
+    }
+
+    return { isActive, status, daysSinceStart, daysSinceEnd, freshness };
   }
+
+  // Transform GDACS Wildfire Data (with proper filtering)
+  transformGDACSWildfires(data) {
+      console.log('🔥 Processing GDACS wildfires...');
+      
+      if (!data?.features) {
+        console.log('No GDACS wildfire data received');
+        return null;
+      }
+
+      const now = new Date();
+
+      const wildfires = data.features
+        .filter(f => f.properties && f.geometry?.coordinates)
+        .map(f => {
+          const props = f.properties;
+          const coords = f.geometry.coordinates;
+          
+          // ── Compute active/ended status ──
+          const eventStatus = this.computeEventStatus(props);
+          
+          return {
+            id: `gdacs_wf_${props.eventid || Math.random()}`,
+            type: 'wildfire',
+            name: props.eventname || props.name || 'Wildfire',
+            coordinates: coords,
+            latitude: coords[1],
+            longitude: coords[0],
+            alertLevel: props.alertlevel || 'Green',
+            alertScore: parseInt(props.alertscore || 0),
+            severity: props.severitydata?.severity || props.severity || 'Unknown',
+            affectedArea: parseInt(props.affectedarea || 0),
+            country: props.country || props.countryname || '',
+            population: parseInt(props.population || 0),
+            fromDate: props.fromdate,
+            toDate: props.todate,
+            duration: parseInt(props.duration || 0),
+            source: 'GDACS',
+            description: props.description || props.eventname || '',
+            url: props.url || '',
+            episodeId: props.episodeid || '',
+            // ── NEW: Validation fields ──
+            isActive: eventStatus.isActive,
+            status: eventStatus.status,
+            freshness: eventStatus.freshness,
+            daysSinceStart: eventStatus.daysSinceStart,
+            daysSinceEnd: eventStatus.daysSinceEnd,
+            lastUpdate: props.lastupdate || props.modified || now.toISOString(),
+            isCurrent: props.iscurrent === 'true' || props.iscurrent === true
+          };
+        })
+        // ── FILTER: Only active OR recently ended (≤3 days) ──
+        .filter(wf => {
+          if (wf.isActive) return true;
+          if (wf.status === 'just_ended') return true;
+          if (wf.daysSinceEnd !== null && wf.daysSinceEnd <= 3) return true;
+          console.log(`  ⏭️ Filtering out ended wildfire: "${wf.name}" (ended ${wf.daysSinceEnd} days ago)`);
+          return false;
+        })
+        // ── SORT: Active first, then by alert severity ──
+        .sort((a, b) => {
+          if (a.isActive && !b.isActive) return -1;
+          if (!a.isActive && b.isActive) return 1;
+          const alertOrder = { 'Red': 3, 'Orange': 2, 'Green': 1 };
+          const diff = (alertOrder[b.alertLevel] || 0) - (alertOrder[a.alertLevel] || 0);
+          if (diff !== 0) return diff;
+          return new Date(b.fromDate || 0) - new Date(a.fromDate || 0);
+        });
+
+      const activeCount = wildfires.filter(w => w.isActive).length;
+      const endedCount = wildfires.filter(w => !w.isActive).length;
+      
+      console.log(`✅ Processed ${wildfires.length} wildfires (${activeCount} active, ${endedCount} recently ended)`);
+      
+      return {
+        type: 'wildfires',
+        timestamp: new Date().toISOString(),
+        count: wildfires.length,
+        activeCount,
+        features: wildfires
+      };
+    }
+
+  
 
   // Transform GDACS Cyclone Data (UPDATED WITH BETTER HANDLING)
   transformGDACSCyclones(data) {

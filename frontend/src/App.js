@@ -21,13 +21,19 @@ const DISASTER_CONFIG = {
       return 12;
     },
     getSeverity: (item) => {
+      if (!item.isActive && item.isActive !== undefined) {
+        return item.status === 'just_ended' ? 'JUST CONTAINED' : 'CONTAINED';
+      }
       const level = item.alertLevel?.toUpperCase();
       if (level === 'RED') return 'CRITICAL';
       if (level === 'ORANGE') return 'SEVERE';
       if (item.affectedArea > 1000) return 'MAJOR';
       return 'ACTIVE';
     },
-    getOpacity: (item) => item.alertLevel === 'Red' ? 0.9 : 0.7
+    getOpacity: (item) => {
+      if (!item.isActive && item.isActive !== undefined) return 0.35;
+      return item.alertLevel === 'Red' ? 0.9 : 0.7;
+    }
   },
   
   earthquakes: { 
@@ -114,7 +120,7 @@ const DISASTER_CONFIG = {
   cyclones: { 
     color: '#00ffcc', 
     icon: '🌀', 
-    name: 'Cyclones/Hurricanes',  // Updated name to be clearer
+    name: 'Cyclones/Hurricanes',
     enabled: true,
     getRadius: (item) => {
       const speed = item.windSpeed || 0;
@@ -122,14 +128,12 @@ const DISASTER_CONFIG = {
       if (speed > 210) return 25;
       if (speed > 180) return 20;
       if (speed > 150) return 15;
-      // Even if no windspeed, show the storm
       return Math.max(speed / 10, 12);
     },
     getSeverity: (item) => {
       const speed = item.windSpeed || 0;
       const cat = item.category || '';
       
-      // Use storm type if available
       if (item.stormType && item.stormType !== 'Tropical Depression') {
         return item.stormType.toUpperCase();
       }
@@ -144,7 +148,6 @@ const DISASTER_CONFIG = {
       return 'TROPICAL DEPRESSION';
     },
     getOpacity: (item) => {
-      // Active storms more visible
       if (item.isActive) return 0.9;
       return 0.6;
     }
@@ -491,7 +494,6 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         const cat4 = items.filter(c => c.windSpeed > 210 && c.windSpeed <= 250).length;
         const activeStorms = items.filter(c => c.isActive).length;
         
-        // Handle different storm types
         const hurricanes = items.filter(c => c.stormType?.includes('Hurricane')).length;
         const typhoons = items.filter(c => c.stormType?.includes('Typhoon')).length;
         
@@ -702,6 +704,40 @@ const PopupContent = ({ item, type, config }) => {
         {/* WILDFIRES - GDACS wildfire fields */}
         {type === 'wildfires' && (
           <>
+            {/* Active/Ended Status Badge */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              marginBottom: '10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: item.isActive ? 'rgba(255, 68, 0, 0.15)' : 'rgba(76, 175, 80, 0.15)',
+              border: item.isActive ? '1px solid rgba(255, 68, 0, 0.4)' : '1px solid rgba(76, 175, 80, 0.4)',
+              color: item.isActive ? '#ff6600' : '#4caf50'
+            }}>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: item.isActive ? '#ff4400' : '#4caf50',
+                boxShadow: item.isActive ? '0 0 6px rgba(255, 68, 0, 0.6)' : 'none',
+                flexShrink: 0
+              }}></span>
+              <span style={{ flex: 1 }}>
+                {item.isActive ? '🔥 ACTIVELY BURNING' : 
+                 item.status === 'just_ended' ? '✅ JUST CONTAINED' : 
+                 '✅ CONTAINED'}
+              </span>
+              {item.lastUpdate && (
+                <span style={{ fontSize: '10px', opacity: 0.7, fontWeight: 400 }}>
+                  Updated: {formatTime(new Date(item.lastUpdate).getTime())}
+                </span>
+              )}
+            </div>
+
             <div className="detail-row">
               <strong>Alert Level:</strong> 
               <span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>
@@ -724,16 +760,38 @@ const PopupContent = ({ item, type, config }) => {
                 <span className="detail-value highlight">{formatNumber(item.population)}</span>
               </div>
             )}
-            {item.duration > 0 && (
+            {item.daysSinceStart > 0 && (
               <div className="detail-row">
                 <strong>Duration:</strong> 
-                <span className="detail-value">{item.duration} days</span>
+                <span className="detail-value">
+                  {item.daysSinceStart} day{item.daysSinceStart !== 1 ? 's' : ''}
+                  {item.isActive ? ' (ongoing)' : ''}
+                </span>
               </div>
             )}
             {item.fromDate && (
               <div className="detail-row">
                 <strong>Started:</strong> 
                 <span className="detail-value">{new Date(item.fromDate).toLocaleDateString()}</span>
+              </div>
+            )}
+            {!item.isActive && item.toDate && (
+              <div className="detail-row">
+                <strong>Ended:</strong> 
+                <span className="detail-value">{new Date(item.toDate).toLocaleDateString()}</span>
+              </div>
+            )}
+            {item.freshness && item.freshness === 'stale' && (
+              <div style={{
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                marginTop: '6px',
+                background: 'rgba(255, 152, 0, 0.15)',
+                color: '#ff9800',
+                border: '1px solid rgba(255, 152, 0, 0.3)'
+              }}>
+                ⚠️ Data may be outdated — last verified over 72 hours ago
               </div>
             )}
             {item.description && (
