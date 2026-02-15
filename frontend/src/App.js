@@ -1,11 +1,12 @@
-// App.js - UPDATED WITH COMBINED CONTROLS AND IMPROVED FLOOD DISPLAY
+// App.js - v2.5 WITH FLOOD STALENESS CLEANUP
+// Fixes: formatFloodInfo now checks toDate age, popup shows ended/stale badges
 import React, { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Polygon, Popup, Tooltip, useMap } from 'react-leaflet';
 import io from 'socket.io-client';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
 
-// Disaster configuration - FLIGHTS REMOVED
+// Disaster configuration
 const DISASTER_CONFIG = {
   
   wildfires: { 
@@ -163,12 +164,17 @@ const DISASTER_CONFIG = {
       return 10;
     },
     getSeverity: (item) => {
+      // If backend already told us it's not active, reflect that
+      if (item.isActive === false) return 'ENDED';
       const level = item.alertLevel?.toUpperCase();
       if (level === 'RED') return 'CRITICAL';
       if (level === 'ORANGE') return 'SEVERE';
       return item.severity?.toUpperCase() || 'MODERATE';
     },
-    getOpacity: (item) => item.alertLevel === 'Red' ? 0.8 : 0.5
+    getOpacity: (item) => {
+      if (item.isActive === false) return 0.3;
+      return item.alertLevel === 'Red' ? 0.8 : 0.5;
+    }
   },
   droughts: { 
     color: '#cc9900', 
@@ -242,12 +248,59 @@ const formatTime = (timestamp) => {
   return 'Just now';
 };
 
-// NEW: Helper function to format flood information
+// =====================================================================
+// FIX: formatFloodInfo now actually checks toDate age instead of
+// blindly trusting status === 'ongoing'
+// =====================================================================
 const formatFloodInfo = (flood) => {
-  // Calculate days active
-  const startDate = new Date(flood.fromDate);
   const now = new Date();
+  const startDate = new Date(flood.fromDate);
   const daysActive = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+  
+  // Determine if the flood is actually active
+  let isActive = false;
+  let statusLabel = '';
+  
+  if (flood.isActive === true) {
+    // Backend already computed this — trust it
+    isActive = true;
+  } else if (flood.isActive === false) {
+    isActive = false;
+    if (flood.daysSinceEnd) {
+      statusLabel = `Ended ~${flood.daysSinceEnd} days ago`;
+    } else {
+      statusLabel = 'Event has ended';
+    }
+  } else {
+    // Fallback: infer from dates and status fields (for older data without isActive)
+    if (flood.status === 'ongoing' || flood.status === 'active') {
+      // Double-check: if toDate is in the past by more than 7 days, it's not really active
+      if (flood.toDate) {
+        const toDate = new Date(flood.toDate);
+        const daysSinceEnd = Math.floor((now - toDate) / (1000 * 60 * 60 * 24));
+        isActive = daysSinceEnd <= 7;
+        if (!isActive) {
+          statusLabel = `Likely ended ~${daysSinceEnd} days ago`;
+        }
+      } else {
+        isActive = true;
+      }
+    } else if (flood.status === 'closed' || flood.status === 'ended') {
+      isActive = false;
+      statusLabel = 'Event has ended';
+    } else {
+      // Unknown status — check toDate
+      if (flood.toDate) {
+        isActive = new Date(flood.toDate) >= now;
+        if (!isActive) {
+          const daysSinceEnd = Math.floor((now - new Date(flood.toDate)) / (1000 * 60 * 60 * 24));
+          statusLabel = `Ended ~${daysSinceEnd} days ago`;
+        }
+      } else {
+        isActive = true; // Assume active if no end date
+      }
+    }
+  }
   
   // Extract the month/year from the original name
   const nameMatch = flood.name.match(/(\w+)\s+(\d{4})/);
@@ -257,15 +310,19 @@ const formatFloodInfo = (flood) => {
   let clearName = flood.name;
   if (nameMatch) {
     const floodType = flood.name.split(' - ')[0];
-    // Make it clear these are ACTIVE floods
-    clearName = `${floodType} (Active since ${monthYear})`;
+    if (isActive) {
+      clearName = `${floodType} (Active since ${monthYear})`;
+    } else {
+      clearName = `${floodType} (${monthYear})`;
+    }
   }
   
   return {
     clearName,
     daysActive,
-    isActive: flood.status === 'ongoing' || flood.status === 'active' || 
-              new Date(flood.toDate) >= new Date()
+    isActive,
+    statusLabel,
+    freshness: flood.freshness || (isActive ? 'current' : 'stale')
   };
 };
 
@@ -385,9 +442,7 @@ const useRealtimeData = () => {
         console.log('Initial data loaded:', aggregateData);
         const processedData = {};
         
-        // Process each data type and log counts
         Object.keys(aggregateData).forEach(key => {
-          // Skip flights data
           if (key === 'flights') return;
           
           if (key === 'earthquakesDetail') {
@@ -396,7 +451,6 @@ const useRealtimeData = () => {
             processedData[key] = aggregateData[key]?.features || [];
           }
           
-          // Log data counts for debugging
           if (processedData[key]?.length > 0) {
             console.log(`${key}: ${processedData[key].length} items loaded`);
             const sample = processedData[key][0];
@@ -533,11 +587,11 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         break;
         
       case 'droughts':
-        const severe = items.filter(d => d.alertLevel === 'Red' || d.alertLevel === 'Orange').length;
+        const severe2 = items.filter(d => d.alertLevel === 'Red' || d.alertLevel === 'Orange').length;
         const totalPop = items.reduce((sum, d) => sum + (d.population || 0), 0);
-        if (severe > 0) details = `${severe} severe`;
+        if (severe2 > 0) details = `${severe2} severe`;
         if (totalPop > 0) details += ` • ${formatNumber(totalPop)} affected`;
-        severity = severe > 5 ? 'HIGH' : 'MODERATE';
+        severity = severe2 > 5 ? 'HIGH' : 'MODERATE';
         break;
         
       case 'fires':
@@ -800,14 +854,36 @@ const PopupContent = ({ item, type, config }) => {
           </>
         )}
 
-        {/* Updated FLOODS section with active badge */}
+        {/* ============================================================= */}
+        {/* FLOODS section — FIX: shows ended badge + staleness warning    */}
+        {/* ============================================================= */}
         {type === 'floods' && (
           <>
-            {/* Active Status Badge */}
+            {/* Active Status Badge — only show if genuinely active */}
             {floodInfo && floodInfo.isActive && (
               <div className="active-flood-badge">
                 <span className="badge-icon">🔴</span>
                 <span className="badge-text">ACTIVE NOW - Day {floodInfo.daysActive}</span>
+              </div>
+            )}
+
+            {/* Ended / Likely Ended Badge */}
+            {floodInfo && !floodInfo.isActive && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                marginBottom: '8px',
+                background: 'rgba(158, 158, 158, 0.15)',
+                color: '#9e9e9e',
+                border: '1px solid rgba(158, 158, 158, 0.3)'
+              }}>
+                <span>⚪</span>
+                <span>{floodInfo.statusLabel || 'Event has ended'}</span>
               </div>
             )}
             
@@ -821,6 +897,17 @@ const PopupContent = ({ item, type, config }) => {
               <strong>Country:</strong> 
               <span className="detail-value">{item.country}</span>
             </div>
+
+            {/* Duration */}
+            {item.fromDate && (
+              <div className="detail-row">
+                <strong>{floodInfo?.isActive ? 'Active for:' : 'Duration:'}</strong> 
+                <span className="detail-value">
+                  {floodInfo?.daysActive} day{floodInfo?.daysActive !== 1 ? 's' : ''}
+                </span>
+              </div>
+            )}
+
             {item.population > 0 && (
               <div className="detail-row">
                 <strong>Population Affected:</strong> 
@@ -833,12 +920,42 @@ const PopupContent = ({ item, type, config }) => {
                 <span className="detail-value">{formatNumber(item.affectedArea)} km²</span>
               </div>
             )}
-            <div className="detail-row">
-              <strong>Started:</strong> 
-              <span className="detail-value">
-                {new Date(item.fromDate).toLocaleDateString()} ({floodInfo.daysActive} days ago)
-              </span>
-            </div>
+            {item.fromDate && (
+              <div className="detail-row">
+                <strong>Started:</strong> 
+                <span className="detail-value">
+                  {new Date(item.fromDate).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+            {!floodInfo?.isActive && item.toDate && (
+              <div className="detail-row">
+                <strong>Ended:</strong> 
+                <span className="detail-value">{new Date(item.toDate).toLocaleDateString()}</span>
+              </div>
+            )}
+
+            {/* Staleness warning */}
+            {(item.freshness === 'stale' || (floodInfo && !floodInfo.isActive && floodInfo.freshness === 'stale')) && (
+              <div style={{
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                marginTop: '6px',
+                background: 'rgba(255, 152, 0, 0.15)',
+                color: '#ff9800',
+                border: '1px solid rgba(255, 152, 0, 0.3)'
+              }}>
+                ⚠️ Data may be outdated — last verified over 72 hours ago
+              </div>
+            )}
+
+            {item.source && (
+              <div className="detail-row">
+                <strong>Source:</strong> 
+                <span className="detail-value">{item.source}</span>
+              </div>
+            )}
             {item.description && (
               <div className="detail-description">{item.description}</div>
             )}
@@ -1052,7 +1169,7 @@ const PopupContent = ({ item, type, config }) => {
 // Main App Component
 function App() {
   const { rawData, connected, loading } = useRealtimeData();
-  const [timeFilter, setTimeFilter] = useState(0); // Default to Live
+  const [timeFilter, setTimeFilter] = useState(0);
   const [enabledLayers, setEnabledLayers] = useState(
     Object.keys(DISASTER_CONFIG).reduce((acc, key) => ({ 
       ...acc, 
@@ -1073,7 +1190,6 @@ function App() {
     items.forEach((item, index) => {
       let lat, lon;
       
-      // Handle different coordinate formats
       if (item.coordinates && Array.isArray(item.coordinates) && item.coordinates.length >= 2) {
         lon = item.coordinates[0];
         lat = item.coordinates[1];
@@ -1081,7 +1197,7 @@ function App() {
         lat = item.latitude;
         lon = item.longitude;
       } else {
-        return; // Skip if no valid coordinates
+        return;
       }
       
       if (isNaN(lat) || isNaN(lon)) return;
@@ -1090,9 +1206,9 @@ function App() {
       const opacity = config.getOpacity ? config.getOpacity(item) : 0.6;
       const severity = config.getSeverity ? config.getSeverity(item) : '';
       
-      // Special handling for flood names and cyclones
+      const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
       const displayName = type === 'floods' ? 
-        formatFloodInfo(item).clearName : 
+        floodInfo.clearName : 
         type === 'cyclones' && item.stormType ?
         `${item.stormType}: ${item.name}` :
         (item.name || item.place || config.name);
@@ -1113,11 +1229,19 @@ function App() {
               <strong>{config.icon} {severity}</strong>
               <br />
               {displayName}
-              {type === 'floods' && formatFloodInfo(item).isActive && (
+              {type === 'floods' && floodInfo?.isActive && (
                 <>
                   <br />
                   <span style={{color: '#ff6666', fontSize: '0.7em'}}>
-                    ⚠️ ACTIVE - Day {formatFloodInfo(item).daysActive}
+                    ⚠️ ACTIVE - Day {floodInfo.daysActive}
+                  </span>
+                </>
+              )}
+              {type === 'floods' && floodInfo && !floodInfo.isActive && (
+                <>
+                  <br />
+                  <span style={{color: '#999', fontSize: '0.7em'}}>
+                    {floodInfo.statusLabel || 'Ended'}
                   </span>
                 </>
               )}

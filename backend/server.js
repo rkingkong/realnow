@@ -1,5 +1,6 @@
-// COMPLETE PRODUCTION SERVER.JS - FIXED VERSION WITH ALL GDACS BUG FIXES
-// This includes proper filtering for mixed GDACS data
+// COMPLETE PRODUCTION SERVER.JS - v2.5 WITH FLOOD STALENESS CLEANUP
+// Fixes: GDACS flood staleness, NASA closed-event window, ReliefWeb age filter,
+//        merge staleness gate, always-run merge, computeEventStatus for floods
 
 const express = require('express');
 const cors = require('cors');
@@ -44,7 +45,7 @@ class DisasterDataAggregator {
       // 1. EARTHQUAKES - USGS (Most reliable source)
       earthquakes: {
         url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson',
-        interval: '*/5 * * * *', // Every 5 minutes
+        interval: '*/5 * * * *',
         transform: this.transformUSGSEarthquakes.bind(this),
         priority: 1
       },
@@ -55,7 +56,7 @@ class DisasterDataAggregator {
           const key = process.env.FIRMS_MAP_KEY || '1ab1f40c11fa5a952619c58594702b1f';
           return `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/VIIRS_SNPP_NRT/world/3`;
         },
-        interval: '*/10 * * * *', // Every 10 minutes
+        interval: '*/10 * * * *',
         transform: this.transformNASAFires.bind(this),
         priority: 2
       },
@@ -63,7 +64,7 @@ class DisasterDataAggregator {
       // 3. WEATHER ALERTS - NOAA
       weather: {
         url: 'https://api.weather.gov/alerts/active',
-        interval: '*/5 * * * *', // Every 5 minutes
+        interval: '*/5 * * * *',
         transform: this.transformNOAAWeather.bind(this),
         priority: 3
       },
@@ -71,15 +72,16 @@ class DisasterDataAggregator {
       // 4. VOLCANOES - NASA EONET
       volcanoes_eonet: {
         url: 'https://eonet.gsfc.nasa.gov/api/v3/events?category=volcanoes&status=open&limit=100',
-        interval: '*/15 * * * *', // Every 15 minutes
+        interval: '*/15 * * * *',
         transform: this.transformEONETVolcanoes.bind(this),
         priority: 4
       },
 
       // 5. FLOODS - NASA EONET (PRIMARY)
+      // FIX: Added &status=open so we only fetch active floods
       floods_nasa: {
-        url: 'https://eonet.gsfc.nasa.gov/api/v3/events?category=floods&limit=100',
-        interval: '*/10 * * * *', // Every 10 minutes
+        url: 'https://eonet.gsfc.nasa.gov/api/v3/events?category=floods&status=open&limit=100',
+        interval: '*/10 * * * *',
         transform: this.transformNASAFloods.bind(this),
         priority: 5
       },
@@ -87,7 +89,7 @@ class DisasterDataAggregator {
       // 6. FLOODS - RELIEFWEB (HUMANITARIAN)
       floods_reliefweb: {
         url: 'https://api.reliefweb.int/v1/disasters?appname=realnow&preset=latest&limit=100&profile=list',
-        interval: '*/15 * * * *', // Every 15 minutes
+        interval: '*/15 * * * *',
         transform: this.transformReliefWebFloods.bind(this),
         priority: 6
       },
@@ -95,7 +97,7 @@ class DisasterDataAggregator {
       // 7. GDACS COMBINED - Due to API bug, we fetch all and filter manually
       gdacs_combined: {
         url: 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH',
-        interval: '*/15 * * * *', // Every 15 minutes
+        interval: '*/15 * * * *',
         transform: this.transformGDACSSplitData.bind(this),
         priority: 7
       },
@@ -103,7 +105,7 @@ class DisasterDataAggregator {
       // 8. SPACE WEATHER - NOAA SWPC
       spaceweather: {
         url: 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json',
-        interval: '*/30 * * * *', // Every 30 minutes
+        interval: '*/30 * * * *',
         transform: this.transformSpaceWeather.bind(this),
         priority: 8
       }
@@ -152,7 +154,6 @@ class DisasterDataAggregator {
     if (transformedCyclones?.features?.length > 0) {
       await this.storeInRedis('cyclones', transformedCyclones);
     } else {
-      // Even if 0, store empty data so frontend knows
       await this.storeInRedis('cyclones', {
         type: 'cyclones',
         timestamp: new Date().toISOString(),
@@ -174,10 +175,9 @@ class DisasterDataAggregator {
       await this.storeInRedis('droughts', transformedDroughts);
     }
 
-    // After storing GDACS floods, merge all flood data
-    if (transformedFloods?.features?.length > 0) {
-      await this.mergeFloodData();
-    }
+    // FIX: ALWAYS merge flood data to clean up stale entries,
+    // even if GDACS returned 0 floods this cycle
+    await this.mergeFloodData();
 
     return { 
       processed: true, 
@@ -444,7 +444,10 @@ class DisasterDataAggregator {
     };
   }
 
+  // =====================================================================
   // Transform NASA EONET Flood Data
+  // FIX: Tightened closed-event window from 7 → 3 days, added isActive/freshness
+  // =====================================================================
   transformNASAFloods(data) {
     console.log('🌊 Processing NASA EONET floods...');
     
@@ -453,12 +456,19 @@ class DisasterDataAggregator {
       return null;
     }
 
+    const now = new Date();
+
     const floods = data.events
       .filter(event => {
+        // Only keep open events, or events closed within last 3 days
         if (!event.closed) return true;
         const closedDate = new Date(event.closed);
-        const daysSinceClosed = (Date.now() - closedDate) / (1000 * 60 * 60 * 24);
-        return daysSinceClosed <= 7;
+        const daysSinceClosed = (now - closedDate) / (1000 * 60 * 60 * 24);
+        if (daysSinceClosed > 3) {
+          console.log(`  ⏭️ Filtering out closed NASA flood: "${event.title}" (closed ${Math.floor(daysSinceClosed)} days ago)`);
+          return false;
+        }
+        return true;
       })
       .map(event => {
         const latestGeometry = event.geometry?.[0] || {};
@@ -466,6 +476,10 @@ class DisasterDataAggregator {
         
         const titleParts = event.title.split(',');
         const country = titleParts.length > 1 ? titleParts[titleParts.length - 1].trim() : 'Unknown';
+
+        const isClosed = !!event.closed;
+        const eventDate = latestGeometry.date ? new Date(latestGeometry.date) : null;
+        const daysSinceStart = eventDate ? Math.floor((now - eventDate) / (1000 * 60 * 60 * 24)) : null;
         
         return {
           id: `nasa_fl_${event.id}`,
@@ -474,19 +488,22 @@ class DisasterDataAggregator {
           coordinates: coords,
           latitude: coords[1],
           longitude: coords[0],
-          alertLevel: event.closed ? 'Green' : 'Orange',
-          severity: event.closed ? 'Recovering' : 'Active',
-          status: event.closed ? 'closed' : 'active',
-          date: latestGeometry.date || new Date().toISOString(),
+          alertLevel: isClosed ? 'Green' : 'Orange',
+          severity: isClosed ? 'Recovering' : 'Active',
+          status: isClosed ? 'closed' : 'active',
+          isActive: !isClosed,
+          freshness: isClosed ? 'aging' : 'current',
+          date: latestGeometry.date || now.toISOString(),
           fromDate: latestGeometry.date,
-          toDate: event.closed || new Date().toISOString(),
+          toDate: event.closed || now.toISOString(),
+          daysSinceStart,
           country: country,
           sources: event.sources?.map(s => ({
             id: s.id,
             url: s.url
           })) || [],
           source: 'NASA_EONET',
-          description: `${event.closed ? 'Recent' : 'Active'} flood event: ${event.title}`
+          description: `${isClosed ? 'Recent' : 'Active'} flood event: ${event.title}`
         };
       });
 
@@ -500,7 +517,10 @@ class DisasterDataAggregator {
     };
   }
 
+  // =====================================================================
   // Transform ReliefWeb Flood Data
+  // FIX: Added 30-day max age filter — skips ancient disasters
+  // =====================================================================
   transformReliefWebFloods(data) {
     console.log('🌊 Processing ReliefWeb humanitarian disasters...');
     
@@ -509,12 +529,28 @@ class DisasterDataAggregator {
       return null;
     }
 
+    const now = new Date();
+    const MAX_AGE_DAYS = 30; // Only show disasters from last 30 days
+
     const floodDisasters = data.data.filter(disaster => {
       const name = disaster.fields?.name || '';
-      return name.toLowerCase().includes('flood');
+      if (!name.toLowerCase().includes('flood')) return false;
+
+      // Check age — skip disasters older than MAX_AGE_DAYS
+      const eventDate = disaster.fields?.date?.created || 
+                        disaster.fields?.date?.changed;
+      if (eventDate) {
+        const daysSince = (now - new Date(eventDate)) / (1000 * 60 * 60 * 24);
+        if (daysSince > MAX_AGE_DAYS) {
+          console.log(`  ⏭️ Filtering out old ReliefWeb flood: "${name}" (${Math.floor(daysSince)} days old)`);
+          return false;
+        }
+      }
+
+      return true;
     });
 
-    console.log(`Found ${floodDisasters.length} flood disasters from ${data.data.length} total disasters`);
+    console.log(`Found ${floodDisasters.length} recent flood disasters from ${data.data.length} total disasters`);
 
     const floods = floodDisasters.map(disaster => {
       const name = disaster.fields?.name || 'Flood Event';
@@ -525,8 +561,10 @@ class DisasterDataAggregator {
       const coords = this.getApproximateCoordinates(country);
       
       const eventDate = disaster.fields?.date?.created || 
-                      disaster.fields?.date?.changed || 
-                      new Date().toISOString();
+                        disaster.fields?.date?.changed || 
+                        now.toISOString();
+      
+      const daysSinceStart = Math.floor((now - new Date(eventDate)) / (1000 * 60 * 60 * 24));
       
       let alertLevel = 'Orange';
       let severity = 'Moderate';
@@ -548,9 +586,12 @@ class DisasterDataAggregator {
         alertLevel: alertLevel,
         severity: severity,
         status: 'ongoing',
+        isActive: true,
+        freshness: daysSinceStart <= 3 ? 'current' : daysSinceStart <= 7 ? 'recent' : 'aging',
         date: eventDate,
         fromDate: eventDate,
-        toDate: new Date().toISOString(),
+        toDate: now.toISOString(),
+        daysSinceStart,
         country: country,
         source: 'ReliefWeb',
         url: disaster.href || `https://reliefweb.int/node/${disaster.id}`,
@@ -568,7 +609,10 @@ class DisasterDataAggregator {
     };
   }
 
-  // Transform GDACS Flood Data (with proper filtering)
+  // =====================================================================
+  // Transform GDACS Flood Data
+  // FIX: Now uses computeEventStatus() + filters ended >7 days (mirrors wildfires)
+  // =====================================================================
   transformGDACSFloods(data) {
     console.log('🌊 Processing GDACS floods...');
     
@@ -577,12 +621,16 @@ class DisasterDataAggregator {
       return null;
     }
 
-    // Data should already be filtered by transformGDACSSplitData
+    const now = new Date();
+
     const floods = data.features
       .filter(f => f.properties && f.geometry?.coordinates)
       .map(f => {
         const props = f.properties;
         const coords = f.geometry.coordinates;
+        
+        // Compute active/ended status (same pattern as wildfires)
+        const eventStatus = this.computeEventStatus(props);
         
         return {
           id: `gdacs_fl_${props.eventid || Math.random()}`,
@@ -601,16 +649,43 @@ class DisasterDataAggregator {
           toDate: props.todate,
           duration: parseInt(props.duration || 0),
           source: 'GDACS',
-          mainEvent: props.iscurrent === 'true'
+          mainEvent: props.iscurrent === 'true',
+          // Validation fields (same as wildfires)
+          isActive: eventStatus.isActive,
+          status: eventStatus.status,
+          freshness: eventStatus.freshness,
+          daysSinceStart: eventStatus.daysSinceStart,
+          daysSinceEnd: eventStatus.daysSinceEnd,
+          lastUpdate: props.lastupdate || props.modified || now.toISOString(),
+          isCurrent: props.iscurrent === 'true' || props.iscurrent === true
         };
+      })
+      // FILTER: Only active OR recently ended (≤7 days)
+      .filter(fl => {
+        if (fl.isActive) return true;
+        if (fl.status === 'just_ended') return true;
+        if (fl.daysSinceEnd !== null && fl.daysSinceEnd <= 7) return true;
+        console.log(`  ⏭️ Filtering out ended GDACS flood: "${fl.name}" (ended ${fl.daysSinceEnd} days ago)`);
+        return false;
+      })
+      // SORT: Active first, then by alert severity
+      .sort((a, b) => {
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        const levelOrder = { 'Red': 0, 'Orange': 1, 'Yellow': 2, 'Green': 3 };
+        return (levelOrder[a.alertLevel] || 4) - (levelOrder[b.alertLevel] || 4);
       });
 
-    console.log(`✅ Processed ${floods.length} floods from GDACS`);
+    const activeCount = floods.filter(f => f.isActive).length;
+    const endedCount = floods.filter(f => !f.isActive).length;
+
+    console.log(`✅ Processed ${floods.length} active/recent floods from GDACS (${activeCount} active, ${endedCount} recently ended)`);
     
     return {
       type: 'floods_gdacs',
       timestamp: new Date().toISOString(),
       count: floods.length,
+      activeCount,
       features: floods
     };
   }
@@ -660,89 +735,83 @@ class DisasterDataAggregator {
 
   // Transform GDACS Wildfire Data (with proper filtering)
   transformGDACSWildfires(data) {
-      console.log('🔥 Processing GDACS wildfires...');
-      
-      if (!data?.features) {
-        console.log('No GDACS wildfire data received');
-        return null;
-      }
-
-      const now = new Date();
-
-      const wildfires = data.features
-        .filter(f => f.properties && f.geometry?.coordinates)
-        .map(f => {
-          const props = f.properties;
-          const coords = f.geometry.coordinates;
-          
-          // ── Compute active/ended status ──
-          const eventStatus = this.computeEventStatus(props);
-          
-          return {
-            id: `gdacs_wf_${props.eventid || Math.random()}`,
-            type: 'wildfire',
-            name: props.eventname || props.name || 'Wildfire',
-            coordinates: coords,
-            latitude: coords[1],
-            longitude: coords[0],
-            alertLevel: props.alertlevel || 'Green',
-            alertScore: parseInt(props.alertscore || 0),
-            severity: props.severitydata?.severity || props.severity || 'Unknown',
-            affectedArea: parseInt(props.affectedarea || 0),
-            country: props.country || props.countryname || '',
-            population: parseInt(props.population || 0),
-            fromDate: props.fromdate,
-            toDate: props.todate,
-            duration: parseInt(props.duration || 0),
-            source: 'GDACS',
-            description: props.description || props.eventname || '',
-            url: props.url || '',
-            episodeId: props.episodeid || '',
-            // ── NEW: Validation fields ──
-            isActive: eventStatus.isActive,
-            status: eventStatus.status,
-            freshness: eventStatus.freshness,
-            daysSinceStart: eventStatus.daysSinceStart,
-            daysSinceEnd: eventStatus.daysSinceEnd,
-            lastUpdate: props.lastupdate || props.modified || now.toISOString(),
-            isCurrent: props.iscurrent === 'true' || props.iscurrent === true
-          };
-        })
-        // ── FILTER: Only active OR recently ended (≤3 days) ──
-        .filter(wf => {
-          if (wf.isActive) return true;
-          if (wf.status === 'just_ended') return true;
-          if (wf.daysSinceEnd !== null && wf.daysSinceEnd <= 3) return true;
-          console.log(`  ⏭️ Filtering out ended wildfire: "${wf.name}" (ended ${wf.daysSinceEnd} days ago)`);
-          return false;
-        })
-        // ── SORT: Active first, then by alert severity ──
-        .sort((a, b) => {
-          if (a.isActive && !b.isActive) return -1;
-          if (!a.isActive && b.isActive) return 1;
-          const alertOrder = { 'Red': 3, 'Orange': 2, 'Green': 1 };
-          const diff = (alertOrder[b.alertLevel] || 0) - (alertOrder[a.alertLevel] || 0);
-          if (diff !== 0) return diff;
-          return new Date(b.fromDate || 0) - new Date(a.fromDate || 0);
-        });
-
-      const activeCount = wildfires.filter(w => w.isActive).length;
-      const endedCount = wildfires.filter(w => !w.isActive).length;
-      
-      console.log(`✅ Processed ${wildfires.length} wildfires (${activeCount} active, ${endedCount} recently ended)`);
-      
-      return {
-        type: 'wildfires',
-        timestamp: new Date().toISOString(),
-        count: wildfires.length,
-        activeCount,
-        features: wildfires
-      };
+    console.log('🔥 Processing GDACS wildfires...');
+    
+    if (!data?.features) {
+      console.log('No GDACS wildfire data received');
+      return null;
     }
 
-  
+    const now = new Date();
 
-  // Transform GDACS Cyclone Data (UPDATED WITH BETTER HANDLING)
+    const wildfires = data.features
+      .filter(f => f.properties && f.geometry?.coordinates)
+      .map(f => {
+        const props = f.properties;
+        const coords = f.geometry.coordinates;
+        
+        const eventStatus = this.computeEventStatus(props);
+        
+        return {
+          id: `gdacs_wf_${props.eventid || Math.random()}`,
+          type: 'wildfire',
+          name: props.eventname || props.name || 'Wildfire',
+          coordinates: coords,
+          latitude: coords[1],
+          longitude: coords[0],
+          alertLevel: props.alertlevel || 'Green',
+          alertScore: parseInt(props.alertscore || 0),
+          severity: props.severitydata?.severity || props.severity || 'Unknown',
+          affectedArea: parseInt(props.affectedarea || 0),
+          country: props.country || props.countryname || '',
+          population: parseInt(props.population || 0),
+          fromDate: props.fromdate,
+          toDate: props.todate,
+          duration: parseInt(props.duration || 0),
+          source: 'GDACS',
+          description: props.description || props.eventname || '',
+          url: props.url || '',
+          episodeId: props.episodeid || '',
+          isActive: eventStatus.isActive,
+          status: eventStatus.status,
+          freshness: eventStatus.freshness,
+          daysSinceStart: eventStatus.daysSinceStart,
+          daysSinceEnd: eventStatus.daysSinceEnd,
+          lastUpdate: props.lastupdate || props.modified || now.toISOString(),
+          isCurrent: props.iscurrent === 'true' || props.iscurrent === true
+        };
+      })
+      .filter(wf => {
+        if (wf.isActive) return true;
+        if (wf.status === 'just_ended') return true;
+        if (wf.daysSinceEnd !== null && wf.daysSinceEnd <= 3) return true;
+        console.log(`  ⏭️ Filtering out ended wildfire: "${wf.name}" (ended ${wf.daysSinceEnd} days ago)`);
+        return false;
+      })
+      .sort((a, b) => {
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        const alertOrder = { 'Red': 3, 'Orange': 2, 'Green': 1 };
+        const diff = (alertOrder[b.alertLevel] || 0) - (alertOrder[a.alertLevel] || 0);
+        if (diff !== 0) return diff;
+        return new Date(b.fromDate || 0) - new Date(a.fromDate || 0);
+      });
+
+    const activeCount = wildfires.filter(w => w.isActive).length;
+    const endedCount = wildfires.filter(w => !w.isActive).length;
+    
+    console.log(`✅ Processed ${wildfires.length} wildfires (${activeCount} active, ${endedCount} recently ended)`);
+    
+    return {
+      type: 'wildfires',
+      timestamp: new Date().toISOString(),
+      count: wildfires.length,
+      activeCount,
+      features: wildfires
+    };
+  }
+
+  // Transform GDACS Cyclone Data
   transformGDACSCyclones(data) {
     console.log('🌀 Processing GDACS cyclones/hurricanes/typhoons...');
     
@@ -751,34 +820,28 @@ class DisasterDataAggregator {
       return null;
     }
     
-    // Log what we're actually getting
     console.log(`Processing ${data.features.length} potential cyclone features`);
     
-    // Data should already be filtered to only TC events
     const cyclones = data.features
       .filter(f => f.properties && f.geometry?.coordinates)
       .map(f => {
         const props = f.properties;
         const coords = f.geometry.coordinates;
         
-        // Parse wind speed - might be missing or 0
         let windSpeed = 0;
         if (props.windspeed !== undefined && props.windspeed !== null) {
           windSpeed = parseInt(props.windspeed) || parseFloat(props.windspeed) || 0;
         }
         
-        // Get storm name and type
         const eventName = props.eventname || props.name || `Tropical System ${props.eventid}`;
         let stormType = 'Tropical Depression';
         
-        // Detect storm type from name
         const nameLower = eventName.toLowerCase();
         if (nameLower.includes('hurricane')) stormType = 'Hurricane';
         else if (nameLower.includes('typhoon')) stormType = 'Typhoon';
         else if (nameLower.includes('cyclone')) stormType = 'Cyclone';
         else if (nameLower.includes('storm')) stormType = 'Tropical Storm';
         else if (windSpeed > 0) {
-          // Classify by wind speed if available
           if (windSpeed >= 119) stormType = 'Hurricane/Typhoon';
           else if (windSpeed >= 63) stormType = 'Tropical Storm';
         }
@@ -812,7 +875,6 @@ class DisasterDataAggregator {
 
     console.log(`✅ Processed ${cyclones.length} cyclones/hurricanes/typhoons from GDACS`);
     
-    // Log some details for debugging
     if (cyclones.length > 0) {
       console.log('Sample cyclones:', cyclones.slice(0, 3).map(c => ({
         name: c.name,
@@ -848,7 +910,6 @@ class DisasterDataAggregator {
       return null;
     }
 
-    // Data should already be filtered by transformGDACSSplitData
     const droughts = data.features
       .filter(f => f.properties && f.geometry?.coordinates)
       .map(f => {
@@ -984,7 +1045,10 @@ class DisasterDataAggregator {
     return [0, 0];
   }
 
+  // =====================================================================
   // Merge flood data from multiple sources
+  // FIX: Added staleness gate — hard 14-day ceiling + 90-day sanity check
+  // =====================================================================
   async mergeFloodData() {
     try {
       const [nasaData, reliefwebData, gdacsData] = await Promise.all([
@@ -997,16 +1061,48 @@ class DisasterDataAggregator {
       const reliefweb = reliefwebData ? JSON.parse(reliefwebData) : { features: [] };
       const gdacs = gdacsData ? JSON.parse(gdacsData) : { features: [] };
 
+      const now = new Date();
+      const MAX_STALE_DAYS = 14; // Hard ceiling: nothing older than 14 days past its end date
+
       const allFloods = [
         ...(nasa.features || []),
         ...(reliefweb.features || []),
         ...(gdacs.features || [])
       ];
+
+      // STEP 1: Staleness gate
+      const freshFloods = allFloods.filter(flood => {
+        // If the flood has a toDate in the past, check how long ago
+        if (flood.toDate) {
+          const toDate = new Date(flood.toDate);
+          if (toDate < now) {
+            const daysSinceEnd = Math.floor((now - toDate) / (1000 * 60 * 60 * 24));
+            if (daysSinceEnd > MAX_STALE_DAYS) {
+              console.log(`  🧹 Removing stale flood from merge: "${flood.name}" (ended ${daysSinceEnd} days ago, source: ${flood.source})`);
+              return false;
+            }
+          }
+        }
+        
+        // If the flood has a fromDate but no toDate, check if it's absurdly old
+        if (flood.fromDate && !flood.toDate) {
+          const fromDate = new Date(flood.fromDate);
+          const daysSinceStart = Math.floor((now - fromDate) / (1000 * 60 * 60 * 24));
+          // A flood going on for over 90 days with no update is suspect
+          if (daysSinceStart > 90 && flood.freshness === 'stale') {
+            console.log(`  🧹 Removing suspiciously old flood: "${flood.name}" (started ${daysSinceStart} days ago, source: ${flood.source})`);
+            return false;
+          }
+        }
+
+        return true;
+      });
       
+      // STEP 2: Deduplicate
       const uniqueFloods = [];
       const seen = new Set();
       
-      allFloods.forEach(flood => {
+      freshFloods.forEach(flood => {
         if (!flood.latitude || !flood.longitude || (flood.latitude === 0 && flood.longitude === 0)) {
           if (flood.source !== 'ReliefWeb') {
             return;
@@ -1023,14 +1119,19 @@ class DisasterDataAggregator {
         }
       });
 
+      // STEP 3: Sort — active first, then by severity
       uniqueFloods.sort((a, b) => {
+        const aActive = a.isActive !== false;
+        const bActive = b.isActive !== false;
+        if (aActive && !bActive) return -1;
+        if (!aActive && bActive) return 1;
         const levelOrder = { 'Red': 0, 'Orange': 1, 'Yellow': 2, 'Green': 3 };
         return (levelOrder[a.alertLevel] || 4) - (levelOrder[b.alertLevel] || 4);
       });
 
       const mergedData = {
         type: 'floods',
-        timestamp: new Date().toISOString(),
+        timestamp: now.toISOString(),
         count: uniqueFloods.length,
         features: uniqueFloods,
         sources: {
@@ -1041,7 +1142,7 @@ class DisasterDataAggregator {
       };
 
       await this.storeInRedis('floods', mergedData);
-      console.log(`🌊 Merged ${uniqueFloods.length} unique floods from all sources`);
+      console.log(`🌊 Merged ${uniqueFloods.length} unique floods from all sources (filtered ${allFloods.length - freshFloods.length} stale)`);
       console.log(`   NASA: ${nasa.count || 0}, ReliefWeb: ${reliefweb.count || 0}, GDACS: ${gdacs.count || 0}`);
       
       return mergedData;
@@ -1077,7 +1178,7 @@ class DisasterDataAggregator {
       const response = await axios.get(url, {
         timeout: 30000,
         headers: {
-          'User-Agent': 'RealNow-DisasterTracker/2.0',
+          'User-Agent': 'RealNow-DisasterTracker/2.5',
           'Accept': 'application/json, text/csv, */*'
         }
       });
@@ -1225,7 +1326,7 @@ app.get('/api/stats', async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
-    version: '2.4',
+    version: '2.5',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage()
@@ -1236,7 +1337,6 @@ app.get('/health', (req, res) => {
 app.post('/api/refresh/:type', async (req, res) => {
   const type = req.params.type;
   
-  // Handle flood refresh
   if (type === 'floods') {
     console.log('Manual flood refresh requested');
     await aggregator.fetchData('floods_nasa');
@@ -1311,11 +1411,12 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log('═══════════════════════════════════════');
-  console.log('🌍 REALNOW DISASTER TRACKER v2.4');
+  console.log('🌍 REALNOW DISASTER TRACKER v2.5');
   console.log('═══════════════════════════════════════');
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🔥 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('🌊 Flood sources: NASA EONET + ReliefWeb + GDACS');
+  console.log('🌊 Flood staleness: 3d NASA / 30d ReliefWeb / 7d GDACS / 14d merge ceiling');
   console.log('🌋 Volcano monitoring: NASA EONET');
   console.log('🌀 GDACS: Fixed filtering for mixed data bug');
   console.log('═══════════════════════════════════════\n');
