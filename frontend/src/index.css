@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ensure full height for app */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Fix for Leaflet */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 1;
+}
+
+/* Fix z-index for controls */
+.map-controls {
+  z-index: 1000 !important;
+}
+
+/* Remove default focus outline on Leaflet */
+.leaflet-container:focus {
+  outline: none;
+}
