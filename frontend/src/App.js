@@ -1,30 +1,36 @@
-// App.js - v3.2 WITH LIVE FEED CHATTER BOX + CLICK-TO-FLY
-// Includes: flood staleness cleanup, wildfire active/ended badges, LiveFeed integration
-// v3.2 adds: click feed item → fly to location + highlight, time label rename, fire timestamp fix
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Polygon, Popup, Tooltip, useMap } from 'react-leaflet';
+// App.js - v4.0 MEGA UPDATE
+// ALL 10 ENHANCEMENTS:
+// 1. Marker Clustering (react-leaflet-markercluster)
+// 2. Location Search + Watch Area (Nominatim geocoding)
+// 3. Heatmap Layer Toggle (leaflet.heat)
+// 4. Event Detail Drawer (slide-in side panel)
+// 5. Historical Timeline Playback (scrubber)
+// 6. Additional Data Sources (landslides, tsunamis)
+// 7. PWA + Offline Support (service worker registration)
+// 8. Sharing & Deep Links (URL params)
+// 9. Country/Region Statistics (reverse geocode)
+// 10. Sound/Notification Alerts (critical event alerts)
+//
+// Carries forward: flood staleness, wildfire badges, LiveFeed click-to-fly, time filter, stats dashboard
+
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Polygon, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import io from 'socket.io-client';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
 import './LiveFeed.css';
+import './v4-enhancements.css';
 
 // =====================================================================
 // DISASTER CONFIGURATION
 // =====================================================================
 const DISASTER_CONFIG = {
-  
-  // === ROW 1: GEOLOGICAL + ATMOSPHERIC ===
   earthquakes: { 
-    color: '#ff4444', 
-    icon: '🌍', 
-    name: 'Earthquakes',
-    enabled: true,
+    color: '#ff4444', icon: '🌍', name: 'Earthquakes', enabled: true,
     getRadius: (item) => {
       const mag = item.magnitude || 0;
-      if (mag >= 7) return 25;
-      if (mag >= 6) return 20;
-      if (mag >= 5) return 15;
-      if (mag >= 4) return 10;
+      if (mag >= 7) return 25; if (mag >= 6) return 20;
+      if (mag >= 5) return 15; if (mag >= 4) return 10;
       return Math.max(mag * 3, 5);
     },
     getSeverity: (item) => {
@@ -37,91 +43,67 @@ const DISASTER_CONFIG = {
     },
     getOpacity: (item) => {
       const mag = item.magnitude || 0;
-      if (mag >= 6) return 0.9;
-      if (mag >= 5) return 0.7;
-      return 0.5;
-    }
-  },
-
-  volcanoes: { 
-    color: '#ff3333', 
-    icon: '🌋', 
-    name: 'Volcanoes',
-    enabled: true,
-    getRadius: (item) => {
-      if (item.alertLevel === 'Red') return 20;
-      if (item.alertLevel === 'Orange') return 15;
-      return 10;
+      if (mag >= 6) return 0.9; if (mag >= 5) return 0.7; return 0.5;
     },
+    // v4: critical threshold for alerts
+    isCritical: (item) => (item.magnitude || 0) >= 6
+  },
+  volcanoes: { 
+    color: '#ff3333', icon: '🌋', name: 'Volcanoes', enabled: true,
+    getRadius: (item) => item.alertLevel === 'Red' ? 20 : item.alertLevel === 'Orange' ? 15 : 10,
     getSeverity: (item) => {
       const level = item.alertLevel?.toUpperCase();
-      if (level === 'RED') return 'ERUPTING';
-      if (level === 'ORANGE') return 'WARNING';
+      if (level === 'RED') return 'ERUPTING'; if (level === 'ORANGE') return 'WARNING';
       return item.severity?.toUpperCase() || 'WATCH';
     },
-    getOpacity: (item) => item.alertLevel === 'Red' ? 0.9 : 0.6
+    getOpacity: (item) => item.alertLevel === 'Red' ? 0.9 : 0.6,
+    isCritical: (item) => item.alertLevel === 'Red'
   },
-
   cyclones: { 
-    color: '#00ccff', 
-    icon: '🌀', 
-    name: 'Cyclones',
-    enabled: true,
+    color: '#00ccff', icon: '🌀', name: 'Cyclones', enabled: true,
     getRadius: (item) => {
       const wind = item.windSpeed || 0;
-      if (wind > 250) return 30;
-      if (wind > 180) return 25;
-      if (wind > 119) return 20;
-      return 15;
+      if (wind > 250) return 30; if (wind > 180) return 25;
+      if (wind > 119) return 20; return 15;
     },
     getSeverity: (item) => {
       const wind = item.windSpeed || 0;
-      if (wind > 250) return 'CATEGORY 5';
-      if (wind > 210) return 'CATEGORY 4';
-      if (wind > 178) return 'CATEGORY 3';
-      if (wind > 153) return 'CATEGORY 2';
-      if (wind > 119) return 'CATEGORY 1';
-      return item.category || 'TROPICAL';
+      if (wind > 250) return 'CATEGORY 5'; if (wind > 210) return 'CATEGORY 4';
+      if (wind > 178) return 'CATEGORY 3'; if (wind > 153) return 'CATEGORY 2';
+      if (wind > 119) return 'CATEGORY 1'; return item.category || 'TROPICAL';
     },
     getOpacity: (item) => {
       const wind = item.windSpeed || 0;
-      return wind > 200 ? 0.9 : wind > 119 ? 0.7 : 0.5;
-    }
-  },
-
-  // === ROW 2: FIRE + WATER ===
-  fires: { 
-    color: '#ff8800', 
-    icon: '🔥', 
-    name: 'Hotspots',
-    enabled: true,
-    getRadius: (item) => {
-      const frp = item.frp || 0;
-      if (frp > 500) return 15;
-      if (frp > 200) return 10;
-      if (frp > 100) return 8;
-      return Math.max(item.brightness / 100, 4);
+      return wind > 200 ? 0.9 : wind > 119 ? 0.7 : 0.4;
     },
-    getSeverity: (item) => {
-      const frp = item.frp || 0;
-      if (frp > 500) return 'EXTREME FIRE';
-      if (frp > 200) return 'HIGH INTENSITY';
-      if (frp > 100) return 'MODERATE';
-      return item.severity?.toUpperCase() || 'LOW';
-    },
-    getOpacity: (item) => item.confidence === 'high' ? 0.8 : 0.5
+    isCritical: (item) => (item.windSpeed || 0) > 119
   },
-
-  wildfires: { 
-    color: '#ff6600', 
-    icon: '🔥', 
-    name: 'Wildfires',
-    enabled: true,
+  floods: { 
+    color: '#4488ff', icon: '🌊', name: 'Floods', enabled: true,
     getRadius: (item) => {
-      if (item.affectedArea > 1000) return 20;
-      if (item.affectedArea > 500) return 15;
       if (item.alertLevel === 'Red') return 18;
       if (item.alertLevel === 'Orange') return 14;
+      if (item.population > 100000) return 16; return 10;
+    },
+    getSeverity: (item) => {
+      const info = formatFloodInfo(item);
+      if (item.alertLevel === 'Red') return 'CRITICAL';
+      if (item.alertLevel === 'Orange') return 'SEVERE';
+      if (info.isActive) return 'ACTIVE';
+      return info.statusLabel || 'MONITORING';
+    },
+    getOpacity: (item) => {
+      const info = formatFloodInfo(item);
+      if (!info.isActive) return 0.3;
+      return item.alertLevel === 'Red' ? 0.85 : 0.6;
+    },
+    isCritical: (item) => item.alertLevel === 'Red'
+  },
+  wildfires: { 
+    color: '#ff6600', icon: '🔥', name: 'Wildfires', enabled: true,
+    getRadius: (item) => {
+      if (item.affectedArea > 1000) return 20; if (item.affectedArea > 500) return 15;
+      if (item.alertLevel === 'Red') return 18; if (item.alertLevel === 'Orange') return 14;
       return 12;
     },
     getSeverity: (item) => {
@@ -129,105 +111,85 @@ const DISASTER_CONFIG = {
         return item.status === 'just_ended' ? 'JUST CONTAINED' : 'CONTAINED';
       }
       const level = item.alertLevel?.toUpperCase();
-      if (level === 'RED') return 'CRITICAL';
-      if (level === 'ORANGE') return 'SEVERE';
-      if (item.affectedArea > 1000) return 'MAJOR';
-      return 'ACTIVE';
+      if (level === 'RED') return 'CRITICAL'; if (level === 'ORANGE') return 'SEVERE';
+      if (item.affectedArea > 1000) return 'MAJOR'; return 'ACTIVE';
     },
     getOpacity: (item) => {
       if (!item.isActive && item.isActive !== undefined) return 0.35;
-      return item.alertLevel === 'Red' ? 0.9 : 0.7;
-    }
+      return item.alertLevel === 'Red' ? 0.9 : 0.6;
+    },
+    isCritical: (item) => item.alertLevel === 'Red' || item.affectedArea > 1000
   },
-
-  floods: { 
-    color: '#4488ff', 
-    icon: '🌊', 
-    name: 'Floods',
-    enabled: true,
+  fires: { 
+    color: '#ff8800', icon: '🔥', name: 'Hotspots', enabled: false,
     getRadius: (item) => {
-      if (item.alertLevel === 'Red') return 18;
-      if (item.alertLevel === 'Orange') return 14;
-      return 10;
+      const frp = item.frp || 0;
+      if (frp > 100) return 8; if (frp > 50) return 6; return 4;
     },
     getSeverity: (item) => {
-      const level = item.alertLevel?.toUpperCase();
-      if (level === 'RED') return 'SEVERE';
-      if (level === 'ORANGE') return 'MODERATE';
-      return 'LOW';
+      const frp = item.frp || 0;
+      if (frp > 200) return 'EXTREME'; if (frp > 100) return 'HIGH';
+      if (frp > 50) return 'MODERATE'; return 'LOW';
     },
-    getOpacity: (item) => item.alertLevel === 'Red' ? 0.8 : 0.5
+    getOpacity: (item) => Math.min(0.3 + (item.frp || 0) / 300, 0.8),
+    isCritical: () => false
   },
-
-  // === ROW 3: ALERTS + MONITORING ===
   weather: { 
-    color: '#ffaa00', 
-    icon: '⚠️', 
-    name: 'Weather',
-    enabled: true,
-    getRadius: (item) => {
-      const sev = (item.severity || '').toLowerCase();
-      if (sev === 'extreme') return 14;
-      if (sev === 'severe') return 11;
-      if (sev === 'moderate') return 8;
-      return 6;
-    },
-    getSeverity: (item) => {
-      const sev = (item.severity || '').toUpperCase();
-      if (sev === 'EXTREME') return 'EXTREME';
-      if (sev === 'SEVERE') return 'SEVERE';
-      if (sev === 'MODERATE') return 'MODERATE';
-      return item.event || 'ALERT';
-    },
-    getOpacity: (item) => {
-      const sev = (item.severity || '').toLowerCase();
-      if (sev === 'extreme') return 0.9;
-      if (sev === 'severe') return 0.7;
-      return 0.5;
-    }
+    color: '#ffaa00', icon: '⚠️', name: 'Weather', enabled: false,
+    getRadius: () => 8,
+    getSeverity: (item) => item.severity?.toUpperCase() || 'ALERT',
+    getOpacity: (item) => item.severity === 'Extreme' ? 0.85 : 0.5,
+    isCritical: (item) => item.severity === 'Extreme'
   },
-
   droughts: { 
-    color: '#cc9900', 
-    icon: '🏜️', 
-    name: 'Droughts',
-    enabled: true,
+    color: '#cc9900', icon: '🏜️', name: 'Droughts', enabled: true,
+    getRadius: (item) => item.alertLevel === 'Red' ? 20 : item.alertLevel === 'Orange' ? 16 : 12,
+    getSeverity: (item) => {
+      if (item.alertLevel === 'Red') return 'CRITICAL';
+      if (item.alertLevel === 'Orange') return 'SEVERE'; return 'WATCH';
+    },
+    getOpacity: (item) => item.alertLevel === 'Red' ? 0.8 : 0.5,
+    isCritical: (item) => item.alertLevel === 'Red'
+  },
+  // v4: NEW DATA TYPES
+  landslides: {
+    color: '#8B4513', icon: '⛰️', name: 'Landslides', enabled: true,
     getRadius: (item) => {
-      if (item.alertLevel === 'Red') return 20;
-      if (item.alertLevel === 'Orange') return 15;
-      return 12;
+      if (item.fatalities > 10) return 18; if (item.fatalities > 0) return 14; return 10;
     },
     getSeverity: (item) => {
-      const level = item.alertLevel?.toUpperCase();
-      if (level === 'RED') return 'EXTREME';
-      if (level === 'ORANGE') return 'SEVERE';
-      return item.severity?.toUpperCase() || 'MODERATE';
+      if (item.fatalities > 50) return 'CATASTROPHIC';
+      if (item.fatalities > 10) return 'SEVERE';
+      if (item.fatalities > 0) return 'FATAL'; return 'REPORTED';
     },
-    getOpacity: (item) => item.alertLevel === 'Red' ? 0.7 : 0.4
+    getOpacity: (item) => item.fatalities > 10 ? 0.85 : 0.55,
+    isCritical: (item) => (item.fatalities || 0) > 10
   },
-
+  tsunamis: {
+    color: '#0066cc', icon: '🌊', name: 'Tsunamis', enabled: true,
+    getRadius: (item) => {
+      if (item.severity === 'Warning') return 25;
+      if (item.severity === 'Watch') return 18; return 12;
+    },
+    getSeverity: (item) => (item.severity || 'ADVISORY').toUpperCase(),
+    getOpacity: (item) => item.severity === 'Warning' ? 0.9 : 0.6,
+    isCritical: (item) => item.severity === 'Warning'
+  },
   spaceweather: { 
-    color: '#ff00ff', 
-    icon: '☀️', 
-    name: 'Space',
-    enabled: false,
+    color: '#ff00ff', icon: '☀️', name: 'Space', enabled: false,
     getRadius: (item) => (item.currentKp || 0) * 5,
     getSeverity: (item) => {
       const kp = item.currentKp || 0;
-      if (kp >= 9) return 'EXTREME STORM';
-      if (kp >= 8) return 'SEVERE STORM';
-      if (kp >= 7) return 'STRONG STORM';
-      if (kp >= 6) return 'MODERATE STORM';
-      if (kp >= 5) return 'MINOR STORM';
-      return 'QUIET';
+      if (kp >= 9) return 'EXTREME STORM'; if (kp >= 8) return 'SEVERE STORM';
+      if (kp >= 7) return 'STRONG STORM'; if (kp >= 5) return 'MINOR STORM'; return 'QUIET';
     },
-    getOpacity: (item) => Math.min((item.currentKp || 0) / 10, 0.9)
+    getOpacity: (item) => Math.min((item.currentKp || 0) / 10, 0.9),
+    isCritical: (item) => (item.currentKp || 0) >= 7
   }
 };
 
 // =====================================================================
 // TIME FILTER OPTIONS
-// v3.2: Renamed "Live" → "All" so it doesn't confuse with "LIVE FEED"
 // =====================================================================
 const TIME_FILTERS = [
   { label: 'All', value: 0, displayName: 'ALL' },
@@ -252,23 +214,40 @@ const formatNumber = (num) => {
 
 const formatTime = (timestamp) => {
   if (!timestamp) return '';
-  const date = new Date(timestamp);
+  const date = new Date(typeof timestamp === 'number' && timestamp < 1e12 ? timestamp * 1000 : timestamp);
   const now = new Date();
   const diff = now - date;
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const days = Math.floor(hours / 24);
-  
-  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
   const minutes = Math.floor(diff / (1000 * 60));
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-  return 'Just now';
+  if (minutes > 0) return `${minutes}m ago`;
+  return 'just now';
 };
 
-// =====================================================================
-// v3.2: COORDINATE HELPER — extract lat/lon from any item
-// =====================================================================
-const getItemCoords = (item) => {
+const formatFloodInfo = (flood) => {
+  const now = new Date();
+  const fromDate = flood.fromDate ? new Date(flood.fromDate) : null;
+  const toDate = flood.toDate ? new Date(flood.toDate) : null;
+  const daysActive = fromDate ? Math.floor((now - fromDate) / (1000 * 60 * 60 * 24)) : 0;
+  const isActive = flood.isActive !== undefined ? flood.isActive :
+    (flood.status === 'active' || flood.status === 'ongoing' ||
+     (!toDate || toDate > now) && daysActive < 14);
+  const statusLabel = isActive
+    ? `Active - Day ${daysActive}` : flood.status === 'just_ended'
+    ? 'Recently ended' : 'Ended';
+  const nameMatch = flood.name ? flood.name.match(/(\w+)\s+(\d{4})/) : null;
+  const monthYear = nameMatch ? `${nameMatch[1]} ${nameMatch[2]}` : '';
+  let clearName = flood.name || 'Flood Event';
+  if (nameMatch) {
+    const floodType = flood.name.split(' - ')[0];
+    clearName = isActive ? `${floodType} (Active since ${monthYear})` : `${floodType} (${monthYear})`;
+  }
+  return { clearName, daysActive, isActive, statusLabel, freshness: flood.freshness || (isActive ? 'current' : 'stale') };
+};
+
+const getEventCoords = (item) => {
   if (item.coordinates && Array.isArray(item.coordinates) && item.coordinates.length >= 2) {
     return { lat: item.coordinates[1], lon: item.coordinates[0] };
   }
@@ -278,513 +257,115 @@ const getItemCoords = (item) => {
   return null;
 };
 
-// =====================================================================
-// FLOOD INFO HELPER (v2.5 with staleness checks)
-// =====================================================================
-const formatFloodInfo = (flood) => {
-  const now = new Date();
-  const startDate = new Date(flood.fromDate);
-  const daysActive = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
-  
-  let isActive = false;
-  let statusLabel = '';
-  
-  if (flood.isActive === true) {
-    isActive = true;
-  } else if (flood.isActive === false) {
-    isActive = false;
-    if (flood.daysSinceEnd) {
-      statusLabel = `Ended ~${flood.daysSinceEnd} days ago`;
-    } else {
-      statusLabel = 'Event has ended';
-    }
-  } else {
-    if (flood.status === 'ongoing' || flood.status === 'active') {
-      if (flood.toDate) {
-        const toDate = new Date(flood.toDate);
-        const daysSinceEnd = Math.floor((now - toDate) / (1000 * 60 * 60 * 24));
-        isActive = daysSinceEnd <= 7;
-        if (!isActive) {
-          statusLabel = `Likely ended ~${daysSinceEnd} days ago`;
-        }
-      } else {
-        isActive = true;
-      }
-    } else if (flood.status === 'closed' || flood.status === 'ended') {
-      isActive = false;
-      statusLabel = 'Event has ended';
-    } else {
-      if (flood.toDate) {
-        isActive = new Date(flood.toDate) >= now;
-        if (!isActive) {
-          const daysSinceEnd = Math.floor((now - new Date(flood.toDate)) / (1000 * 60 * 60 * 24));
-          statusLabel = `Ended ~${daysSinceEnd} days ago`;
-        }
-      } else {
-        isActive = true;
-      }
-    }
+const getEventTimestamp = (item, type) => {
+  if (type === 'fires' && item.date) {
+    const t = item.time && /^\d{4}$/.test(item.time)
+      ? `${item.date}T${item.time.slice(0,2)}:${item.time.slice(2)}:00Z`
+      : `${item.date}T00:00:00Z`;
+    return new Date(t).getTime();
   }
-  
-  const nameMatch = flood.name ? flood.name.match(/(\w+)\s+(\d{4})/) : null;
-  const monthYear = nameMatch ? `${nameMatch[1]} ${nameMatch[2]}` : '';
-  
-  let clearName = flood.name || 'Flood Event';
-  if (nameMatch) {
-    const floodType = flood.name.split(' - ')[0];
-    if (isActive) {
-      clearName = `${floodType} (Active since ${monthYear})`;
-    } else {
-      clearName = `${floodType} (${monthYear})`;
-    }
+  if (item.time) {
+    const t = parseInt(item.time);
+    return t > 1e11 ? t : t * 1000;
   }
-  
-  return {
-    clearName,
-    daysActive,
-    isActive,
-    statusLabel,
-    freshness: flood.freshness || (isActive ? 'current' : 'stale')
-  };
+  if (item.date) return new Date(item.date).getTime();
+  if (item.fromDate) return new Date(item.fromDate).getTime();
+  if (item.lastUpdate) return new Date(item.lastUpdate).getTime();
+  if (item.onset) return new Date(item.onset).getTime();
+  return Date.now();
 };
 
 // =====================================================================
-// TIME FILTER
+// FILTER DATA BY TIME
 // =====================================================================
 const filterDataByTime = (data, timeFilter) => {
   if (timeFilter === 0) return data;
-  
   const now = new Date();
   const cutoffTime = now - timeFilter;
-  
   const filtered = {};
   Object.keys(data).forEach(type => {
-    if (!data[type]) {
-      filtered[type] = [];
-      return;
-    }
-    
+    if (!data[type]) { filtered[type] = []; return; }
     filtered[type] = data[type].filter(item => {
-      let timestamp = null;
-      
       try {
-        if (item.time) {
-          timestamp = parseInt(item.time);
-        } else if (item.date && item.time) {
-          const dateStr = item.date;
-          const timeStr = item.time;
-          if (dateStr) {
-            const fullDateTime = `${dateStr}T${timeStr.slice(0,2)}:${timeStr.slice(2)}:00Z`;
-            timestamp = new Date(fullDateTime).getTime();
-            if (isNaN(timestamp)) {
-              timestamp = new Date(dateStr).getTime();
-            }
-          }
-        } else if (item.date) {
-          if (typeof item.date === 'string') {
-            timestamp = new Date(item.date).getTime();
-          } else if (typeof item.date === 'number') {
-            timestamp = item.date;
-          }
-        } else if (item.fromDate) {
-          timestamp = new Date(item.fromDate).getTime();
-        } else if (item.toDate) {
-          timestamp = new Date(item.toDate).getTime();
-        } else if (item.lastUpdate) {
-          timestamp = new Date(item.lastUpdate).getTime();
-        } else if (item.onset) {
-          timestamp = new Date(item.onset).getTime();
-        } else if (item.updated) {
-          timestamp = parseInt(item.updated);
-        }
-        
-        if (!timestamp || isNaN(timestamp)) {
-          if (type === 'volcanoes' || type === 'wildfires' || type === 'droughts' || type === 'cyclones') {
-            return true;
-          }
-          if (type === 'fires' && item.date) {
-            const dateOnly = new Date(item.date + 'T00:00:00Z').getTime();
-            if (!isNaN(dateOnly)) {
-              timestamp = dateOnly;
-            } else {
-              return true;
-            }
-          } else {
-            return true;
-          }
-        }
-        
-        return timestamp >= cutoffTime;
-        
-      } catch (error) {
-        console.log(`Error parsing timestamp for ${type}:`, error);
-        return true;
-      }
+        const ts = getEventTimestamp(item, type);
+        if (!ts || isNaN(ts)) return true;
+        return ts >= cutoffTime;
+      } catch { return true; }
     });
   });
-  
   return filtered;
 };
 
 // =====================================================================
-// v3.2: MAP CONTROLLER — flies to target location when feed item clicked
+// v4: NOTIFICATION SOUND (Web Audio API — no external files needed)
 // =====================================================================
-const MapController = ({ flyTarget }) => {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (flyTarget && flyTarget.lat != null && flyTarget.lon != null) {
-      map.flyTo([flyTarget.lat, flyTarget.lon], flyTarget.zoom || 7, {
-        duration: 1.4,
-        easeLinearity: 0.25
-      });
-    }
-  }, [flyTarget, map]);
-  
-  return null;
+const playAlertSound = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.1);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) { /* silent fail on browsers that block audio */ }
 };
 
 // =====================================================================
-// LIVE FEED COMPONENT (Translucent Chatter Box)
-// v3.2: Added click-to-fly, fixed fire timestamps, added coords to items
+// v4: BROWSER NOTIFICATIONS
 // =====================================================================
-const FEED_ICONS = {
-  earthquakes: { icon: '🌍', color: '#ff4444', label: 'Earthquake' },
-  wildfires:   { icon: '🔥', color: '#ff6600', label: 'Wildfire' },
-  fires:       { icon: '🔥', color: '#ff8800', label: 'Hotspot' },
-  floods:      { icon: '🌊', color: '#4488ff', label: 'Flood' },
-  cyclones:    { icon: '🌀', color: '#00ccff', label: 'Cyclone' },
-  volcanoes:   { icon: '🌋', color: '#ff3333', label: 'Volcano' },
-  droughts:    { icon: '🏜️', color: '#cc9900', label: 'Drought' },
-  spaceweather:{ icon: '☀️', color: '#ff00ff', label: 'Space Weather' },
-  weather:     { icon: '⚠️', color: '#ffaa00', label: 'Weather' },
-};
-
-const MAX_FEED_ITEMS = 80;
-
-// v3.2: Proper timestamp extraction per disaster type
-// Fixes "1871d ago" for FIRMS fires whose .time is "0630" (HHMM), not a unix timestamp
-const getEventTimestamp = (item, type) => {
-  // FIRMS fires: date = "YYYY-MM-DD", time = "HHMM" (not unix)
-  if (type === 'fires' && item.date) {
-    const t = item.time && /^\d{4}$/.test(item.time)
-      ? `${item.time.slice(0,2)}:${item.time.slice(2)}:00`
-      : '00:00:00';
-    const ts = new Date(`${item.date}T${t}Z`).getTime();
-    if (!isNaN(ts)) return ts;
-  }
-  // Earthquakes: .time is unix milliseconds
-  if (type === 'earthquakes' && item.time) {
-    const ts = parseInt(item.time);
-    if (!isNaN(ts) && ts > 1e12) return ts;
-  }
-  // Weather alerts: try effective, sent, onset
-  if (type === 'weather') {
-    for (const field of ['effective', 'sent', 'onset', 'date']) {
-      if (item[field]) {
-        const d = new Date(item[field]).getTime();
-        if (!isNaN(d)) return d;
-      }
-    }
-  }
-  // Generic fallbacks
-  if (item.fromDate) {
-    const d = new Date(item.fromDate).getTime();
-    if (!isNaN(d)) return d;
-  }
-  if (item.lastUpdate) {
-    const d = new Date(item.lastUpdate).getTime();
-    if (!isNaN(d)) return d;
-  }
-  if (item.onset) {
-    const d = new Date(item.onset).getTime();
-    if (!isNaN(d)) return d;
-  }
-  if (item.date && typeof item.date === 'string') {
-    const d = new Date(item.date).getTime();
-    if (!isNaN(d)) return d;
-  }
-  if (item.time) {
-    const ts = parseInt(item.time);
-    if (!isNaN(ts) && ts > 1e12) return ts;
-  }
-  return Date.now();
-};
-
-const feedTimeAgo = (ts) => {
-  if (!ts) return '';
-  const diff = Date.now() - new Date(ts).getTime();
-  if (diff < 0) return 'just now';
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const d = Math.floor(hr / 24);
-  return `${d}d ago`;
-};
-
-const getEventTitle = (item, type) => {
-  switch (type) {
-    case 'earthquakes':
-      return `M${(item.magnitude || 0).toFixed(1)} — ${item.place || item.name || 'Unknown location'}`;
-    case 'wildfires':
-      return item.name || item.place || 'Wildfire detected';
-    case 'fires':
-      return item.place || item.name || `Hotspot (FRP ${item.frp || '?'})`;
-    case 'floods':
-      return item.name || item.place || 'Flood event';
-    case 'cyclones':
-      return item.stormType 
-        ? `${item.stormType}: ${item.name || 'Unnamed'}` 
-        : item.name || 'Tropical system';
-    case 'volcanoes':
-      return item.name || item.place || 'Volcanic activity';
-    case 'droughts':
-      return item.name || item.place || 'Drought warning';
-    case 'spaceweather':
-      return item.name || `Kp ${item.currentKp || '?'}`;
-    case 'weather':
-      return item.event || item.headline || item.name || item.areas || 'Weather alert';
-    default:
-      return item.name || item.place || type;
+const sendBrowserNotification = (title, body, icon) => {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification(title, { body, icon: icon || '🌍', tag: 'realnow-alert', renotify: true });
+    } catch (e) { /* mobile fallback */ }
   }
 };
 
-const getSeverityBadge = (item, type) => {
-  switch (type) {
-    case 'earthquakes': {
-      const m = item.magnitude || 0;
-      if (m >= 7) return { text: 'EXTREME', level: 'extreme' };
-      if (m >= 6) return { text: 'SEVERE', level: 'high' };
-      if (m >= 5) return { text: 'MAJOR', level: 'moderate' };
-      return null;
-    }
-    case 'wildfires':
-    case 'volcanoes':
-    case 'droughts': {
-      const a = item.alertLevel?.toUpperCase();
-      if (a === 'RED') return { text: 'RED ALERT', level: 'extreme' };
-      if (a === 'ORANGE') return { text: 'WARNING', level: 'high' };
-      return null;
-    }
-    case 'cyclones': {
-      const w = item.windSpeed || 0;
-      if (w > 250) return { text: 'CAT 5', level: 'extreme' };
-      if (w > 210) return { text: 'CAT 4', level: 'high' };
-      if (w > 178) return { text: 'CAT 3', level: 'moderate' };
-      return null;
-    }
-    case 'weather': {
-      const sev = item.severity?.toLowerCase();
-      if (sev === 'extreme') return { text: 'EXTREME', level: 'extreme' };
-      if (sev === 'severe') return { text: 'SEVERE', level: 'high' };
-      return null;
-    }
-    default:
-      return null;
-  }
-};
-
-// v3.2: LiveFeed now accepts onEventClick and activeEventId props
-const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
-  const [feedItems, setFeedItems] = useState([]);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const feedRef = useRef(null);
-  const prevDataRef = useRef({});
-  const feedIdCounter = useRef(0);
-
-  const detectNewEvents = useCallback((newData) => {
-    const prevData = prevDataRef.current;
-    const newItems = [];
-
-    Object.keys(newData).forEach(type => {
-      const currentItems = newData[type] || [];
-      const prevItems = prevData[type] || [];
-
-      const prevIds = new Set(
-        prevItems.map(item => item.id || `${type}_${item.latitude}_${item.longitude}_${item.name}`)
-      );
-
-      currentItems.forEach(item => {
-        const itemId = item.id || `${type}_${item.latitude}_${item.longitude}_${item.name}`;
-        if (!prevIds.has(itemId)) {
-          feedIdCounter.current += 1;
-          // v3.2: Extract coordinates for click-to-fly
-          const coords = getItemCoords(item);
-          newItems.push({
-            feedId: feedIdCounter.current,
-            type,
-            title: getEventTitle(item, type),
-            severity: getSeverityBadge(item, type),
-            // v3.2: Use proper timestamp parser instead of raw item.time
-            timestamp: getEventTimestamp(item, type),
-            arrivedAt: Date.now(),
-            icon: FEED_ICONS[type]?.icon || '⚠️',
-            color: FEED_ICONS[type]?.color || '#ffffff',
-            label: FEED_ICONS[type]?.label || type,
-            // v3.2: Store coordinates for fly-to
-            lat: coords?.lat,
-            lon: coords?.lon,
-            raw: item,
-          });
-        }
-      });
+// =====================================================================
+// v4: PWA SERVICE WORKER REGISTRATION
+// =====================================================================
+const registerServiceWorker = () => {
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        console.log('SW registered:', reg.scope);
+      }).catch(err => console.log('SW registration failed:', err));
     });
-
-    newItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    if (newItems.length > 0) {
-      setFeedItems(prev => {
-        const merged = [...newItems, ...prev].slice(0, MAX_FEED_ITEMS);
-        return merged;
-      });
-      if (isMinimized) {
-        setUnreadCount(prev => prev + newItems.length);
-      }
-    }
-
-    prevDataRef.current = { ...newData };
-  }, [isMinimized]);
-
-  useEffect(() => {
-    if (data && Object.keys(data).length > 0) {
-      detectNewEvents(data);
-    }
-  }, [data, detectNewEvents]);
-
-  useEffect(() => {
-    if (autoScroll && feedRef.current && !isMinimized) {
-      feedRef.current.scrollTop = 0;
-    }
-  }, [feedItems, autoScroll, isMinimized]);
-
-  const handleScroll = () => {
-    if (!feedRef.current) return;
-    setAutoScroll(feedRef.current.scrollTop < 20);
-  };
-
-  const toggleMinimize = () => {
-    setIsMinimized(prev => {
-      if (prev) setUnreadCount(0);
-      return !prev;
-    });
-  };
-
-  // v3.2: Handle clicking a feed item → fly to its location
-  const handleItemClick = (item) => {
-    if (onEventClick && item.lat != null && item.lon != null) {
-      onEventClick(item);
-    }
-  };
-
-  // MINIMIZED STATE
-  if (isMinimized) {
-    return (
-      <button
-        className="livefeed-minimized-pill"
-        onClick={toggleMinimize}
-        aria-label="Open live event feed"
-      >
-        <span className="pill-pulse" />
-        <span className="pill-icon">📡</span>
-        <span className="pill-label">LIVE</span>
-        {unreadCount > 0 && (
-          <span className="pill-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
-        )}
-      </button>
-    );
   }
+};
 
-  // EXPANDED STATE
-  return (
-    <div
-      className={`livefeed-container ${isHovered ? 'hovered' : ''}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <div className="livefeed-header">
-        <div className="livefeed-header-left">
-          <span className={`livefeed-dot ${connected ? 'connected' : 'disconnected'}`} />
-          <span className="livefeed-title">LIVE FEED</span>
-          <span className="livefeed-count">{feedItems.length}</span>
-        </div>
-        <div className="livefeed-header-right">
-          {!autoScroll && (
-            <button
-              className="livefeed-btn livefeed-btn-top"
-              onClick={() => {
-                if (feedRef.current) feedRef.current.scrollTop = 0;
-                setAutoScroll(true);
-              }}
-              title="Jump to latest"
-            >
-              ↑ New
-            </button>
-          )}
-          <button
-            className="livefeed-btn livefeed-btn-minimize"
-            onClick={toggleMinimize}
-            title="Minimize feed"
-          >
-            ▬
-          </button>
-        </div>
-      </div>
+// =====================================================================
+// v4: URL SHARING — read/write deep link params
+// =====================================================================
+const getShareParams = () => {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    eventId: params.get('event'),
+    lat: params.get('lat') ? parseFloat(params.get('lat')) : null,
+    lon: params.get('lon') ? parseFloat(params.get('lon')) : null,
+    zoom: params.get('zoom') ? parseInt(params.get('zoom')) : null,
+    type: params.get('type')
+  };
+};
 
-      <div
-        className="livefeed-list"
-        ref={feedRef}
-        onScroll={handleScroll}
-      >
-        {feedItems.length === 0 ? (
-          <div className="livefeed-empty">
-            <span className="livefeed-empty-icon">📡</span>
-            <span>Waiting for events...</span>
-          </div>
-        ) : (
-          feedItems.map((item, idx) => (
-            <div
-              key={item.feedId}
-              className={`livefeed-item ${idx < 3 ? 'livefeed-item-new' : ''} ${activeEventId === item.feedId ? 'livefeed-item-active' : ''}`}
-              style={{
-                '--accent': item.color,
-                cursor: item.lat != null ? 'pointer' : 'default'
-              }}
-              onClick={() => handleItemClick(item)}
-            >
-              <div className="livefeed-item-icon" style={{ background: item.color + '22', color: item.color }}>
-                {item.icon}
-              </div>
-              <div className="livefeed-item-body">
-                <div className="livefeed-item-top">
-                  <span className="livefeed-item-label" style={{ color: item.color }}>{item.label}</span>
-                  {item.severity && (
-                    <span className={`livefeed-severity livefeed-severity-${item.severity.level}`}>
-                      {item.severity.text}
-                    </span>
-                  )}
-                </div>
-                <div className="livefeed-item-title">{item.title}</div>
-                <div className="livefeed-item-time">{feedTimeAgo(item.timestamp)}</div>
-              </div>
-              <div className="livefeed-item-accent" style={{ background: item.color }} />
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="livefeed-footer">
-        <span className="livefeed-footer-text">
-          {connected ? '⚡ streaming' : '⏸ reconnecting...'}
-        </span>
-      </div>
-    </div>
-  );
+const buildShareUrl = (item, type) => {
+  const coords = getEventCoords(item);
+  if (!coords) return window.location.origin;
+  const id = item.id || item.name || '';
+  const params = new URLSearchParams({
+    event: id,
+    type: type,
+    lat: coords.lat.toFixed(4),
+    lon: coords.lon.toFixed(4),
+    zoom: '8'
+  });
+  return `${window.location.origin}?${params.toString()}`;
 };
 
 // =====================================================================
@@ -796,61 +377,37 @@ const useRealtimeData = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const socket = io('/', {
-      path: '/socket.io/',
-      transports: ['websocket', 'polling']
-    });
+    const socket = io('/', { path: '/socket.io/', transports: ['websocket', 'polling'] });
 
     socket.on('connect', () => {
       console.log('Connected to real-time updates');
       setConnected(true);
       socket.emit('subscribe', Object.keys(DISASTER_CONFIG));
     });
-
-    socket.on('disconnect', () => {
-      setConnected(false);
-    });
+    socket.on('disconnect', () => setConnected(false));
 
     Object.keys(DISASTER_CONFIG).forEach(type => {
       socket.on(`update:${type}`, (newData) => {
-        console.log(`Received ${type} update:`, newData?.count || 0, 'items');
-        setRawData(prev => ({ 
-          ...prev, 
-          [type]: newData?.features || []
-        }));
+        setRawData(prev => ({ ...prev, [type]: newData?.features || [] }));
       });
     });
 
     fetch('/api/aggregate')
       .then(res => res.json())
-      .then(aggregateData => {
-        console.log('Initial data loaded:', aggregateData);
-        const processedData = {};
-        
-        Object.keys(aggregateData).forEach(key => {
+      .then(agg => {
+        const processed = {};
+        Object.keys(agg).forEach(key => {
           if (key === 'flights') return;
-          
           if (key === 'earthquakesDetail') {
-            processedData['earthquakes'] = aggregateData[key]?.features || [];
-          } else if (key !== 'earthquakes' || !processedData['earthquakes']) {
-            processedData[key] = aggregateData[key]?.features || [];
-          }
-          
-          if (processedData[key]?.length > 0) {
-            console.log(`${key}: ${processedData[key].length} items loaded`);
-            const sample = processedData[key][0];
-            const timestamp = sample.time || sample.date || sample.fromDate || sample.lastUpdate || sample.onset;
-            console.log(`  Sample timestamp for ${key}:`, timestamp);
+            processed['earthquakes'] = agg[key]?.features || [];
+          } else if (key !== 'earthquakes' || !processed['earthquakes']) {
+            processed[key] = agg[key]?.features || [];
           }
         });
-        
-        setRawData(processedData);
+        setRawData(processed);
         setLoading(false);
       })
-      .catch(err => {
-        console.error('Error fetching initial data:', err);
-        setLoading(false);
-      });
+      .catch(err => { console.error('Initial data error:', err); setLoading(false); });
 
     return () => socket.disconnect();
   }, []);
@@ -859,16 +416,434 @@ const useRealtimeData = () => {
 };
 
 // =====================================================================
+// v4: LOCATION SEARCH COMPONENT (Nominatim free geocoding)
+// =====================================================================
+const LocationSearch = ({ onSelect, onWatchArea }) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [watchRadius, setWatchRadius] = useState(null);
+  const debounceRef = useRef(null);
+
+  const search = useCallback((q) => {
+    if (q.length < 2) { setResults([]); return; }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`,
+          { headers: { 'User-Agent': 'RealNow-DisasterTracker/4.0' } }
+        );
+        const data = await res.json();
+        setResults(data);
+        setIsOpen(data.length > 0);
+      } catch (e) { console.error('Search error:', e); }
+    }, 400);
+  }, []);
+
+  const handleSelect = (result) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    onSelect({ lat, lon, name: result.display_name, zoom: 10 });
+    setQuery(result.display_name.split(',')[0]);
+    setIsOpen(false);
+  };
+
+  const handleWatch = () => {
+    if (!query) return;
+    const selected = results[0];
+    if (selected) {
+      const radius = watchRadius || 200;
+      onWatchArea({
+        lat: parseFloat(selected.lat),
+        lon: parseFloat(selected.lon),
+        name: selected.display_name.split(',')[0],
+        radius
+      });
+      setWatchRadius(radius);
+    }
+  };
+
+  return (
+    <div className="search-container">
+      <div className="search-input-row">
+        <span className="search-icon">🔍</span>
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Search location..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
+          onFocus={() => results.length > 0 && setIsOpen(true)}
+        />
+        {query && (
+          <button className="search-clear" onClick={() => { setQuery(''); setResults([]); setIsOpen(false); }}>✕</button>
+        )}
+      </div>
+      {isOpen && (
+        <div className="search-results">
+          {results.map((r, i) => (
+            <div key={i} className="search-result-item" onClick={() => handleSelect(r)}>
+              <span className="result-icon">📍</span>
+              <span className="result-text">{r.display_name}</span>
+            </div>
+          ))}
+          {results.length > 0 && (
+            <div className="search-watch-row">
+              <select
+                className="watch-radius-select"
+                value={watchRadius || 200}
+                onChange={(e) => setWatchRadius(parseInt(e.target.value))}
+              >
+                <option value={50}>50 km</option>
+                <option value={100}>100 km</option>
+                <option value={200}>200 km</option>
+                <option value={500}>500 km</option>
+              </select>
+              <button className="watch-btn" onClick={handleWatch}>👁️ Watch Area</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =====================================================================
+// v4: HEATMAP LAYER (using Canvas rendering for performance)
+// =====================================================================
+const HeatmapLayer = ({ data, enabledLayers }) => {
+  const map = useMap();
+  const canvasRef = useRef(null);
+  
+  useEffect(() => {
+    if (!map) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '400';
+    canvasRef.current = canvas;
+    
+    const container = map.getContainer();
+    container.appendChild(canvas);
+    
+    const render = () => {
+      const size = map.getSize();
+      canvas.width = size.x;
+      canvas.height = size.y;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      const points = [];
+      ['earthquakes', 'fires', 'wildfires'].forEach(type => {
+        if (!enabledLayers[type] || !data[type]) return;
+        const config = DISASTER_CONFIG[type];
+        data[type].forEach(item => {
+          const coords = getEventCoords(item);
+          if (!coords) return;
+          const point = map.latLngToContainerPoint([coords.lat, coords.lon]);
+          const intensity = type === 'earthquakes' 
+            ? (item.magnitude || 3) / 9 
+            : type === 'fires' 
+            ? Math.min((item.frp || 10) / 200, 1)
+            : 0.7;
+          points.push({ x: point.x, y: point.y, intensity, color: config.color });
+        });
+      });
+      
+      points.forEach(p => {
+        const radius = 20 + p.intensity * 30;
+        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+        const [r, g, b] = hexToRgb(p.color);
+        gradient.addColorStop(0, `rgba(${r},${g},${b},${p.intensity * 0.4})`);
+        gradient.addColorStop(0.5, `rgba(${r},${g},${b},${p.intensity * 0.15})`);
+        gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      });
+    };
+    
+    map.on('move zoom viewreset', render);
+    render();
+    
+    return () => {
+      map.off('move zoom viewreset', render);
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+    };
+  }, [map, data, enabledLayers]);
+  
+  return null;
+};
+
+const hexToRgb = (hex) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [255, 255, 255];
+};
+
+// =====================================================================
+// v4: EVENT DETAIL DRAWER (slide-in side panel)
+// =====================================================================
+const DetailDrawer = ({ item, type, onClose, onShare }) => {
+  if (!item || !type) return null;
+  
+  const config = DISASTER_CONFIG[type];
+  const severity = config?.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
+  const coords = getEventCoords(item);
+  const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
+  const shareUrl = buildShareUrl(item, type);
+  
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      if (onShare) onShare('Link copied!');
+    }).catch(() => {
+      // Fallback
+      const input = document.createElement('input');
+      input.value = shareUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      if (onShare) onShare('Link copied!');
+    });
+  };
+  
+  return (
+    <div className="detail-drawer">
+      <div className="drawer-header">
+        <div className="drawer-icon-title">
+          <span className="drawer-icon">{config?.icon}</span>
+          <div>
+            <h3 className="drawer-title">
+              {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || config?.name)}
+            </h3>
+            <span className={`drawer-severity sev-${severity.toLowerCase().replace(/ /g, '-')}`}>{severity}</span>
+          </div>
+        </div>
+        <button className="drawer-close" onClick={onClose}>✕</button>
+      </div>
+      
+      <div className="drawer-body">
+        {/* Event-specific details */}
+        {type === 'earthquakes' && (
+          <div className="drawer-section">
+            <div className="drawer-row"><span>Magnitude</span><strong>M{item.magnitude?.toFixed(1)}</strong></div>
+            <div className="drawer-row"><span>Depth</span><strong>{item.depth?.toFixed(1)} km</strong></div>
+            {item.felt > 0 && <div className="drawer-row"><span>Felt Reports</span><strong>{item.felt}</strong></div>}
+            {item.alert && <div className="drawer-row"><span>Alert Level</span><strong className={`alert-${item.alert}`}>{item.alert}</strong></div>}
+            {item.tsunami === 1 && <div className="drawer-alert tsunami">⚠️ TSUNAMI WARNING ISSUED</div>}
+            {item.time && <div className="drawer-row"><span>Time</span><strong>{formatTime(item.time)}</strong></div>}
+          </div>
+        )}
+        
+        {type === 'wildfires' && (
+          <div className="drawer-section">
+            <div className={`drawer-status-badge ${item.isActive ? 'active' : 'contained'}`}>
+              {item.isActive ? '🔥 ACTIVELY BURNING' : item.status === 'just_ended' ? '🟡 JUST CONTAINED' : '✅ CONTAINED'}
+            </div>
+            {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
+            {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+            {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+          </div>
+        )}
+        
+        {type === 'floods' && (
+          <div className="drawer-section">
+            {floodInfo?.isActive ? (
+              <div className="drawer-status-badge active">🔴 ACTIVE — Day {floodInfo.daysActive}</div>
+            ) : (
+              <div className="drawer-status-badge contained">⚪ {floodInfo?.statusLabel || 'Ended'}</div>
+            )}
+            {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
+            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+            {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+            {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+          </div>
+        )}
+        
+        {type === 'cyclones' && (
+          <div className="drawer-section">
+            {item.stormType && <div className="drawer-row"><span>Type</span><strong>{item.stormType}</strong></div>}
+            {item.windSpeed && <div className="drawer-row"><span>Wind Speed</span><strong>{item.windSpeed} km/h</strong></div>}
+            {item.category && <div className="drawer-row"><span>Category</span><strong>{item.category}</strong></div>}
+          </div>
+        )}
+        
+        {type === 'volcanoes' && (
+          <div className="drawer-section">
+            {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
+            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+          </div>
+        )}
+
+        {type === 'landslides' && (
+          <div className="drawer-section">
+            {item.fatalities > 0 && <div className="drawer-row"><span>Fatalities</span><strong className="text-red">{item.fatalities}</strong></div>}
+            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+            {item.trigger && <div className="drawer-row"><span>Trigger</span><strong>{item.trigger}</strong></div>}
+          </div>
+        )}
+
+        {type === 'tsunamis' && (
+          <div className="drawer-section">
+            <div className="drawer-alert tsunami">⚠️ {severity}</div>
+            {item.region && <div className="drawer-row"><span>Region</span><strong>{item.region}</strong></div>}
+          </div>
+        )}
+        
+        {/* Common section */}
+        <div className="drawer-section coords-section">
+          {coords && (
+            <div className="drawer-row"><span>Coordinates</span><strong>{coords.lat.toFixed(4)}, {coords.lon.toFixed(4)}</strong></div>
+          )}
+          {item.description && (
+            <div className="drawer-description">{item.description}</div>
+          )}
+          {item.source && <div className="drawer-row faded"><span>Source</span><strong>{item.source}</strong></div>}
+          {item.sources?.length > 0 && (
+            <div className="drawer-links">
+              {item.sources.slice(0, 3).map((s, i) => (
+                <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="drawer-source-link">
+                  {s.id || 'Source'} ↗
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div className="drawer-footer">
+        <button className="drawer-share-btn" onClick={handleCopyLink}>🔗 Copy Share Link</button>
+      </div>
+    </div>
+  );
+};
+
+// =====================================================================
+// v4: COUNTRY/REGION STATISTICS
+// =====================================================================
+const RegionStats = ({ data, watchArea }) => {
+  const stats = useMemo(() => {
+    if (!watchArea) return null;
+    const { lat, lon, radius, name } = watchArea;
+    const results = {};
+    let total = 0;
+    
+    Object.entries(data).forEach(([type, items]) => {
+      if (!items?.length) return;
+      const nearby = items.filter(item => {
+        const coords = getEventCoords(item);
+        if (!coords) return false;
+        const dist = haversineDistance(lat, lon, coords.lat, coords.lon);
+        return dist <= radius;
+      });
+      if (nearby.length > 0) {
+        results[type] = nearby.length;
+        total += nearby.length;
+      }
+    });
+    
+    return { name, radius, results, total };
+  }, [data, watchArea]);
+  
+  if (!stats || stats.total === 0) return null;
+  
+  return (
+    <div className="region-stats">
+      <div className="region-stats-header">
+        <span className="region-name">📍 {stats.name}</span>
+        <span className="region-radius">{stats.radius}km radius</span>
+      </div>
+      <div className="region-stats-body">
+        {Object.entries(stats.results).map(([type, count]) => (
+          <div key={type} className="region-stat-item">
+            <span className="region-stat-icon">{DISASTER_CONFIG[type]?.icon}</span>
+            <span className="region-stat-count">{count}</span>
+            <span className="region-stat-label">{DISASTER_CONFIG[type]?.name}</span>
+          </div>
+        ))}
+      </div>
+      <div className="region-stats-total">
+        {stats.total} event{stats.total !== 1 ? 's' : ''} within {stats.radius}km
+      </div>
+    </div>
+  );
+};
+
+const haversineDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+};
+
+// =====================================================================
+// v4: WATCH AREA CIRCLE (visual overlay on map)
+// =====================================================================
+const WatchAreaCircle = ({ watchArea }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (!watchArea || !map) return;
+    const L = window.L || require('leaflet');
+    const circle = L.circle([watchArea.lat, watchArea.lon], {
+      radius: watchArea.radius * 1000,
+      color: '#00ff88',
+      fillColor: '#00ff88',
+      fillOpacity: 0.05,
+      weight: 2,
+      dashArray: '8 4',
+      opacity: 0.5
+    }).addTo(map);
+    
+    const label = L.marker([watchArea.lat, watchArea.lon], {
+      icon: L.divIcon({
+        className: 'watch-label',
+        html: `<div class="watch-label-inner">👁️ ${watchArea.name}</div>`,
+        iconSize: [120, 24],
+        iconAnchor: [60, -10]
+      })
+    }).addTo(map);
+    
+    return () => { map.removeLayer(circle); map.removeLayer(label); };
+  }, [watchArea, map]);
+  
+  return null;
+};
+
+// =====================================================================
+// MAP CONTROLLER — handles fly-to for feed clicks & deep links
+// =====================================================================
+const MapController = ({ flyTarget }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (flyTarget && flyTarget.lat != null && flyTarget.lon != null) {
+      map.flyTo([flyTarget.lat, flyTarget.lon], flyTarget.zoom || 7, {
+        duration: 1.4, easeLinearity: 0.25
+      });
+    }
+  }, [flyTarget, map]);
+  return null;
+};
+
+// =====================================================================
 // TIME CONTROL COMPONENT
 // =====================================================================
 const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  
   const currentFilter = TIME_FILTERS.find(f => f.value === timeFilter) || TIME_FILTERS[0];
   
   return (
     <div className="time-control-container">
-      <button 
+      <button
         className={`time-control-button ${isExpanded ? 'expanded' : ''} ${connected ? 'connected' : 'disconnected'}`}
         onClick={() => setIsExpanded(!isExpanded)}
       >
@@ -879,17 +854,13 @@ const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
         <span className="filter-label">{currentFilter.displayName}</span>
         <span className="filter-arrow">{isExpanded ? '▼' : '▲'}</span>
       </button>
-      
       {isExpanded && (
         <div className="time-control-dropdown">
           {TIME_FILTERS.map(filter => (
             <button
               key={filter.value}
               className={`filter-option ${timeFilter === filter.value ? 'active' : ''}`}
-              onClick={() => {
-                setTimeFilter(filter.value);
-                setIsExpanded(false);
-              }}
+              onClick={() => { setTimeFilter(filter.value); setIsExpanded(false); }}
             >
               {filter.label}
             </button>
@@ -901,24 +872,102 @@ const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
 };
 
 // =====================================================================
+// v4: TIMELINE SCRUBBER (historical playback)
+// =====================================================================
+const TimelineScrubber = ({ data, onTimeChange }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [position, setPosition] = useState(100); // 0-100, 100 = now
+  const [isVisible, setIsVisible] = useState(false);
+  const intervalRef = useRef(null);
+  
+  const play = () => {
+    setIsPlaying(true);
+    setPosition(0);
+    let pos = 0;
+    intervalRef.current = setInterval(() => {
+      pos += 0.5;
+      if (pos >= 100) {
+        pos = 100;
+        setIsPlaying(false);
+        clearInterval(intervalRef.current);
+      }
+      setPosition(pos);
+      // Map position to time: 0 = 7 days ago, 100 = now
+      const msAgo = (1 - pos / 100) * 7 * 24 * 60 * 60 * 1000;
+      onTimeChange(msAgo);
+    }, 100);
+  };
+  
+  const stop = () => {
+    setIsPlaying(false);
+    clearInterval(intervalRef.current);
+    setPosition(100);
+    onTimeChange(0);
+  };
+  
+  const handleSlider = (e) => {
+    const val = parseFloat(e.target.value);
+    setPosition(val);
+    const msAgo = (1 - val / 100) * 7 * 24 * 60 * 60 * 1000;
+    onTimeChange(msAgo);
+  };
+  
+  useEffect(() => () => clearInterval(intervalRef.current), []);
+  
+  if (!isVisible) {
+    return (
+      <button className="timeline-toggle-btn" onClick={() => setIsVisible(true)}>
+        ⏱️ Timeline
+      </button>
+    );
+  }
+  
+  const daysAgo = ((1 - position / 100) * 7).toFixed(1);
+  
+  return (
+    <div className="timeline-scrubber">
+      <div className="timeline-header">
+        <span className="timeline-label">⏱️ TIMELINE</span>
+        <span className="timeline-time">{position >= 99 ? 'NOW' : `${daysAgo}d ago`}</span>
+        <button className="timeline-close" onClick={() => { stop(); setIsVisible(false); }}>✕</button>
+      </div>
+      <div className="timeline-controls">
+        <button className="timeline-btn" onClick={isPlaying ? stop : play}>
+          {isPlaying ? '⏹' : '▶️'}
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="0.5"
+          value={position}
+          onChange={handleSlider}
+          className="timeline-slider"
+        />
+      </div>
+      <div className="timeline-ticks">
+        <span>7d</span><span>5d</span><span>3d</span><span>1d</span><span>Now</span>
+      </div>
+    </div>
+  );
+};
+
+// =====================================================================
 // STATS DASHBOARD COMPONENT
 // =====================================================================
-const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
+const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
-  
+
   const getStats = (type, items) => {
     if (!items?.length) return { severity: 'NONE', count: 0, details: '' };
-    
-    let details = '';
-    let severity = 'LOW';
-    
+    let details = '', severity = 'LOW';
     switch(type) {
       case 'earthquakes': {
         const maxMag = Math.max(...items.map(e => e.magnitude || 0));
         const major = items.filter(e => e.magnitude >= 6).length;
         if (maxMag > 0) details = `M${maxMag.toFixed(1)} max`;
-        if (major > 0) details += (details ? ' • ' : '') + `${major} major`;
+        if (major > 0) details += (details ? ' · ' : '') + `${major} major`;
         severity = maxMag >= 7 ? 'EXTREME' : maxMag >= 6 ? 'HIGH' : maxMag >= 5 ? 'MODERATE' : 'LOW';
         break;
       }
@@ -926,100 +975,57 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         const red = items.filter(v => v.alertLevel === 'Red').length;
         const orange = items.filter(v => v.alertLevel === 'Orange').length;
         if (red > 0) details = `${red} erupting`;
-        if (orange > 0) details += (details ? ' • ' : '') + `${orange} warning`;
+        if (orange > 0) details += (details ? ' · ' : '') + `${orange} warning`;
         severity = red > 0 ? 'EXTREME' : orange > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
       case 'cyclones': {
-        const maxWind = Math.max(...items.map(c => c.windSpeed || 0));
         const hurricanes = items.filter(c => c.stormType?.includes('Hurricane')).length;
         const typhoons = items.filter(c => c.stormType?.includes('Typhoon')).length;
-        
-        if (hurricanes > 0 && typhoons > 0) {
-          details = `${hurricanes} hurricanes • ${typhoons} typhoons`;
-        } else if (hurricanes > 0) {
-          details = `${hurricanes} hurricane${hurricanes > 1 ? 's' : ''}`;
-        } else if (typhoons > 0) {
-          details = `${typhoons} typhoon${typhoons > 1 ? 's' : ''}`;
-        } else if (maxWind > 0) {
-          details = `${maxWind} km/h max`;
-        }
-        
-        const cat5 = items.filter(c => c.windSpeed > 250).length;
-        if (cat5 > 0) details += (details ? ' • ' : '') + `${cat5} Cat5`;
-        severity = maxWind > 250 ? 'EXTREME' : maxWind > 180 ? 'HIGH' : items.length > 0 ? 'MODERATE' : 'LOW';
-        break;
-      }
-      case 'fires': {
-        const extreme = items.filter(f => f.frp > 500).length;
-        const high = items.filter(f => f.frp > 200).length;
-        if (extreme > 0) details = `${extreme} extreme`;
-        if (high > 0) details += (details ? ' • ' : '') + `${high} high intensity`;
-        severity = extreme > 10 ? 'EXTREME' : extreme > 0 ? 'HIGH' : 'MODERATE';
-        break;
-      }
-      case 'wildfires': {
-        const redWildfires = items.filter(w => w.alertLevel === 'Red').length;
-        const orangeWildfires = items.filter(w => w.alertLevel === 'Orange').length;
-        if (redWildfires > 0) details = `${redWildfires} critical`;
-        if (orangeWildfires > 0) details += (details ? ' • ' : '') + `${orangeWildfires} severe`;
-        severity = redWildfires > 0 ? 'HIGH' : orangeWildfires > 0 ? 'MODERATE' : 'LOW';
+        if (hurricanes > 0) details = `${hurricanes} hurricane${hurricanes > 1 ? 's' : ''}`;
+        if (typhoons > 0) details += (details ? ' · ' : '') + `${typhoons} typhoon${typhoons > 1 ? 's' : ''}`;
+        severity = hurricanes + typhoons > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
       case 'floods': {
-        const redFloods = items.filter(f => f.alertLevel === 'Red').length;
-        const activeFloods = items.filter(f => {
-          const info = formatFloodInfo(f);
-          return info.isActive;
-        }).length;
-        if (redFloods > 0) details = `${redFloods} critical`;
-        if (activeFloods > 0) details += (details ? ' • ' : '') + `${activeFloods} active now`;
-        severity = redFloods > 0 ? 'HIGH' : 'MODERATE';
+        const active = items.filter(f => formatFloodInfo(f).isActive).length;
+        if (active > 0) details = `${active} active`;
+        severity = active > 3 ? 'HIGH' : active > 0 ? 'MODERATE' : 'LOW';
         break;
       }
-      case 'weather': {
-        const extremeWeather = items.filter(w => w.severity === 'Extreme').length;
-        const severeWeather = items.filter(w => w.severity === 'Severe').length;
-        if (extremeWeather > 0) details = `${extremeWeather} extreme`;
-        if (severeWeather > 0) details += (details ? ' • ' : '') + `${severeWeather} severe`;
-        severity = extremeWeather > 0 ? 'HIGH' : severeWeather > 0 ? 'MODERATE' : 'LOW';
+      case 'landslides': {
+        const fatal = items.filter(l => (l.fatalities || 0) > 0).length;
+        details = fatal > 0 ? `${fatal} fatal` : '';
+        severity = fatal > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
-      case 'droughts': {
-        const severe2 = items.filter(d => d.alertLevel === 'Red' || d.alertLevel === 'Orange').length;
-        const totalPop = items.reduce((sum, d) => sum + (d.population || 0), 0);
-        if (severe2 > 0) details = `${severe2} severe`;
-        if (totalPop > 0) details += (details ? ' • ' : '') + `${formatNumber(totalPop)} affected`;
-        severity = severe2 > 5 ? 'HIGH' : 'MODERATE';
+      case 'tsunamis': {
+        const warnings = items.filter(t => t.severity === 'Warning').length;
+        details = warnings > 0 ? `${warnings} warning${warnings > 1 ? 's' : ''}` : '';
+        severity = warnings > 0 ? 'EXTREME' : 'MODERATE';
         break;
       }
-      case 'spaceweather': {
-        const kp = items[0]?.currentKp || 0;
-        const sev = items[0]?.severity || 'quiet';
-        details = `Kp ${kp} • ${sev}`;
-        severity = kp >= 7 ? 'HIGH' : kp >= 5 ? 'MODERATE' : 'LOW';
-        break;
+      default: {
+        details = items.length > 5 ? `${items.length} events` : '';
+        severity = items.length > 10 ? 'HIGH' : 'MODERATE';
       }
-      default:
-        break;
     }
-    
     return { severity, count: items.length, details };
   };
 
-  const criticalCount = 
-    (data.volcanoes?.filter(v => v.alertLevel === 'Red').length || 0) +
-    (data.cyclones?.filter(c => c.windSpeed > 119 || c.stormType?.includes('Hurricane') || c.stormType?.includes('Typhoon')).length || 0) +
-    (data.earthquakes?.filter(e => e.magnitude >= 6).length || 0);
-  
+  const allTypes = Object.keys(DISASTER_CONFIG);
+  let criticalCount = 0;
+  allTypes.forEach(type => {
+    const items = data[type] || [];
+    items.forEach(item => {
+      if (DISASTER_CONFIG[type].isCritical && DISASTER_CONFIG[type].isCritical(item)) criticalCount++;
+    });
+  });
+
   if (isMinimized) {
     return (
-      <div className="stats-dashboard enhanced minimized">
-        <div className="minimize-toggle" onClick={() => setIsMinimized(false)} style={{cursor:'pointer'}}>
-          <span className="toggle-icon">📊</span>
-          <span className="toggle-text">Stats</span>
-          {criticalCount > 0 && <span className="critical-badge">{criticalCount}</span>}
-        </div>
+      <div className="stats-dashboard minimized" onClick={() => setIsMinimized(false)}>
+        <span className="minimize-toggle in-header">📊 Stats {criticalCount > 0 ? `(⚠️${criticalCount})` : ''}</span>
       </div>
     );
   }
@@ -1027,70 +1033,59 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
   return (
     <div className="stats-dashboard enhanced">
       <div className="dashboard-header">
-        <h3 className="dashboard-title">GLOBAL MONITORING</h3>
-        <button className="minimize-toggle in-header" onClick={() => setIsMinimized(true)}>▬</button>
+        <div className="dashboard-title">
+          <span>📊 DISASTER MONITOR</span>
+          <span className="dashboard-subtitle">{connected ? '⚡ streaming' : '⏸ reconnecting...'}</span>
+        </div>
+        <button className="minimize-toggle in-header" onClick={() => setIsMinimized(true)}>—</button>
       </div>
-      
       <div className="stats-grid">
-        {Object.entries(DISASTER_CONFIG).map(([key, config]) => {
+        {allTypes.map(key => {
+          const config = DISASTER_CONFIG[key];
           const items = data[key] || [];
           const stats = getStats(key, items);
-          const severityClass = `severity-${stats.severity.toLowerCase()}`;
-          
+          const isEnabled = enabledLayers[key];
+          const severityClass = stats.severity.toLowerCase();
           return (
-            <div 
+            <div
               key={key}
-              className={`stat-card enhanced ${enabledLayers[key] ? 'active' : ''} ${severityClass}`}
+              className={`stat-card enhanced ${isEnabled ? 'active' : ''} ${severityClass}`}
               onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}
             >
               <div className="stat-header">
                 <span className="stat-icon">{config.icon}</span>
-                <span className={`stat-count ${stats.severity === 'EXTREME' ? 'pulse' : ''}`}>
-                  {stats.count}
-                </span>
+                <span className={`stat-count ${stats.severity === 'EXTREME' ? 'pulse' : ''}`}>{stats.count}</span>
               </div>
               <div className="stat-name">{config.name}</div>
-              {stats.details && (
-                <div className="stat-details">{stats.details}</div>
-              )}
+              {stats.details && <div className="stat-details">{stats.details}</div>}
               {stats.severity !== 'NONE' && stats.severity !== 'LOW' && (
-                <div className={`severity-badge ${severityClass}`}>
-                  {stats.severity}
-                </div>
+                <div className={`severity-badge ${severityClass}`}>{stats.severity}</div>
               )}
             </div>
           );
         })}
       </div>
-      
       {criticalCount > 0 && (
         <div className="alerts-toggle">
-          <button 
-            className="alerts-button"
-            onClick={() => setShowAlerts(!showAlerts)}
-          >
+          <button className="alerts-button" onClick={() => setShowAlerts(!showAlerts)}>
             <span>⚠️ {criticalCount} Critical Alert{criticalCount > 1 ? 's' : ''}</span>
             <span className="toggle-arrow">{showAlerts ? '▼' : '▶'}</span>
           </button>
         </div>
       )}
-      
       {showAlerts && (
         <div className="alerts-section">
-          {data.volcanoes?.filter(v => v.alertLevel === 'Red').map((volcano, i) => (
-            <div key={i} className="critical-alert volcano">
-              🌋 ERUPTION: {volcano.name} - {volcano.country}
-            </div>
+          {data.volcanoes?.filter(v => v.alertLevel === 'Red').map((v, i) => (
+            <div key={`v${i}`} className="critical-alert volcano">🌋 ERUPTION: {v.name} - {v.country}</div>
           ))}
-          {data.cyclones?.filter(c => c.windSpeed > 119 || c.stormType?.includes('Hurricane') || c.stormType?.includes('Typhoon')).map((cyclone, i) => (
-            <div key={i} className="critical-alert cyclone">
-              🌀 {cyclone.stormType || 'CYCLONE'}: {cyclone.name || 'Unnamed'} - {cyclone.windSpeed ? `${cyclone.windSpeed} km/h` : cyclone.category || ''}
-            </div>
+          {data.cyclones?.filter(c => c.windSpeed > 119).map((c, i) => (
+            <div key={`c${i}`} className="critical-alert cyclone">🌀 {c.stormType || 'CYCLONE'}: {c.name} - {c.windSpeed ? `${c.windSpeed} km/h` : ''}</div>
           ))}
           {data.earthquakes?.filter(e => e.magnitude >= 6).slice(0, 3).map((eq, i) => (
-            <div key={i} className="critical-alert earthquake">
-              🌍 M{eq.magnitude?.toFixed(1)} - {eq.place} - {formatTime(eq.time)}
-            </div>
+            <div key={`e${i}`} className="critical-alert earthquake">🌍 M{eq.magnitude?.toFixed(1)} - {eq.place} - {formatTime(eq.time)}</div>
+          ))}
+          {data.tsunamis?.filter(t => t.severity === 'Warning').map((t, i) => (
+            <div key={`t${i}`} className="critical-alert tsunami-alert">🌊 TSUNAMI: {t.name || t.region}</div>
           ))}
         </div>
       )}
@@ -1101,10 +1096,9 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
 // =====================================================================
 // POPUP CONTENT COMPONENT
 // =====================================================================
-const PopupContent = ({ item, type, config }) => {
+const PopupContent = ({ item, type, config, onOpenDrawer }) => {
   const severity = config.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
   const severityClass = `severity-${severity.toLowerCase().replace(/ /g, '-')}`;
-  
   const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
   
   return (
@@ -1113,551 +1107,392 @@ const PopupContent = ({ item, type, config }) => {
         <span className="popup-icon">{config.icon}</span>
         <div className="popup-title-section">
           <div className="popup-title">
-            {type === 'floods' && floodInfo ? 
-              floodInfo.clearName : 
-              (item.name || item.place || item.event || config.name)
-            }
+            {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || config.name)}
           </div>
-          <div className={`popup-severity ${severityClass}`}>
-            {severity}
-          </div>
+          <div className={`popup-severity ${severityClass}`}>{severity}</div>
         </div>
       </div>
-      
       <div className="popup-details">
-        {/* WILDFIRES */}
+        {type === 'earthquakes' && (
+          <>
+            <div className="detail-row"><strong>Magnitude:</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)}</span></div>
+            <div className="detail-row"><strong>Depth:</strong><span className="detail-value">{item.depth?.toFixed(1)} km</span></div>
+            {item.tsunami === 1 && <div className="alert-box tsunami">⚠️ TSUNAMI WARNING</div>}
+          </>
+        )}
         {type === 'wildfires' && (
           <>
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              marginBottom: '10px',
-              fontSize: '12px',
-              fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '6px', marginBottom: '10px', fontSize: '12px', fontWeight: 600,
               background: item.isActive ? 'rgba(255, 68, 0, 0.15)' : 'rgba(76, 175, 80, 0.15)',
               border: item.isActive ? '1px solid rgba(255, 68, 0, 0.4)' : '1px solid rgba(76, 175, 80, 0.4)',
               color: item.isActive ? '#ff6600' : '#4caf50'
             }}>
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: item.isActive ? '#ff4400' : '#4caf50',
-                boxShadow: item.isActive ? '0 0 6px rgba(255, 68, 0, 0.6)' : 'none',
-                flexShrink: 0
-              }}></span>
-              <span style={{ flex: 1 }}>
-                {item.isActive ? '🔥 ACTIVELY BURNING' : 
-                 item.status === 'just_ended' ? '✅ JUST CONTAINED' : 
-                 '✅ CONTAINED'}
-              </span>
-              {item.lastUpdate && (
-                <span style={{ fontSize: '10px', opacity: 0.7, fontWeight: 400 }}>
-                  Updated: {formatTime(new Date(item.lastUpdate).getTime())}
-                </span>
-              )}
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.isActive ? '#ff4400' : '#4caf50', flexShrink: 0 }}></span>
+              <span>{item.isActive ? '🔥 ACTIVELY BURNING' : item.status === 'just_ended' ? '🟡 RECENTLY CONTAINED' : '✅ CONTAINED'}</span>
             </div>
-
-            <div className="detail-row">
-              <strong>Alert Level:</strong> 
-              <span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>
-                {item.alertLevel}
-              </span>
-            </div>
-            <div className="detail-row">
-              <strong>Country:</strong> 
-              <span className="detail-value">{item.country}</span>
-            </div>
-            {item.affectedArea > 0 && (
-              <div className="detail-row">
-                <strong>Affected Area:</strong> 
-                <span className="detail-value highlight">{formatNumber(item.affectedArea)} km²</span>
-              </div>
-            )}
-            {item.population > 0 && (
-              <div className="detail-row">
-                <strong>Population at Risk:</strong> 
-                <span className="detail-value highlight">{formatNumber(item.population)}</span>
-              </div>
-            )}
-            {item.daysSinceStart > 0 && (
-              <div className="detail-row">
-                <strong>Duration:</strong> 
-                <span className="detail-value">
-                  {item.daysSinceStart} day{item.daysSinceStart !== 1 ? 's' : ''}
-                  {item.isActive ? ' (ongoing)' : ''}
-                </span>
-              </div>
-            )}
-            {item.fromDate && (
-              <div className="detail-row">
-                <strong>Started:</strong> 
-                <span className="detail-value">{new Date(item.fromDate).toLocaleDateString()}</span>
-              </div>
-            )}
-            {!item.isActive && item.toDate && (
-              <div className="detail-row">
-                <strong>Ended:</strong> 
-                <span className="detail-value">{new Date(item.toDate).toLocaleDateString()}</span>
-              </div>
-            )}
-            {item.freshness && item.freshness === 'stale' && (
-              <div style={{
-                padding: '4px 8px',
-                borderRadius: '4px',
-                fontSize: '11px',
-                marginTop: '6px',
-                background: 'rgba(255, 152, 0, 0.15)',
-                color: '#ff9800',
-                border: '1px solid rgba(255, 152, 0, 0.3)'
-              }}>
-                ⚠️ Data may be outdated
-              </div>
-            )}
-            {item.description && (
-              <div className="detail-description">{item.description}</div>
-            )}
+            {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
+            {item.affectedArea > 0 && <div className="detail-row"><strong>Area:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
           </>
         )}
-
-        {/* FLOODS */}
         {type === 'floods' && (
           <>
-            {floodInfo && floodInfo.isActive && (
-              <div className="active-flood-badge">
-                <span className="badge-icon">🔴</span>
-                <span className="badge-text">ACTIVE NOW - Day {floodInfo.daysActive}</span>
-              </div>
-            )}
-            {floodInfo && !floodInfo.isActive && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 10px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                marginBottom: '8px',
-                background: 'rgba(158, 158, 158, 0.15)',
-                color: '#9e9e9e',
-                border: '1px solid rgba(158, 158, 158, 0.3)'
-              }}>
-                <span>⚪</span>
-                <span>{floodInfo.statusLabel || 'Event has ended'}</span>
-              </div>
-            )}
-            
-            <div className="detail-row">
-              <strong>Alert Level:</strong> 
-              <span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>
-                {item.alertLevel}
-              </span>
-            </div>
-            <div className="detail-row">
-              <strong>Country:</strong> 
-              <span className="detail-value">{item.country}</span>
-            </div>
-            {item.fromDate && (
-              <div className="detail-row">
-                <strong>{floodInfo?.isActive ? 'Active for:' : 'Duration:'}</strong> 
-                <span className="detail-value">
-                  {floodInfo?.daysActive} day{floodInfo?.daysActive !== 1 ? 's' : ''}
-                </span>
-              </div>
-            )}
-            {item.population > 0 && (
-              <div className="detail-row">
-                <strong>Population Affected:</strong> 
-                <span className="detail-value highlight">{formatNumber(item.population)}</span>
-              </div>
-            )}
-            {item.affectedArea > 0 && (
-              <div className="detail-row">
-                <strong>Area:</strong> 
-                <span className="detail-value">{formatNumber(item.affectedArea)} km²</span>
-              </div>
-            )}
-            {item.fromDate && (
-              <div className="detail-row">
-                <strong>Started:</strong> 
-                <span className="detail-value">
-                  {new Date(item.fromDate).toLocaleDateString()}
-                </span>
-              </div>
-            )}
-            {!floodInfo?.isActive && item.toDate && (
-              <div className="detail-row">
-                <strong>Ended:</strong> 
-                <span className="detail-value">{new Date(item.toDate).toLocaleDateString()}</span>
-              </div>
-            )}
-            {(item.freshness === 'stale' || (floodInfo && !floodInfo.isActive && floodInfo.freshness === 'stale')) && (
-              <div style={{
-                padding: '4px 8px',
-                borderRadius: '4px',
-                fontSize: '11px',
-                marginTop: '6px',
-                background: 'rgba(255, 152, 0, 0.15)',
-                color: '#ff9800',
-                border: '1px solid rgba(255, 152, 0, 0.3)'
-              }}>
-                ⚠️ Data may be outdated — last verified over 72 hours ago
-              </div>
-            )}
-            {item.source && (
-              <div className="detail-row">
-                <strong>Source:</strong> 
-                <span className="detail-value">{item.source}</span>
-              </div>
-            )}
-            {item.description && (
-              <div className="detail-description">{item.description}</div>
-            )}
+            {floodInfo?.isActive && <div className="active-flood-badge"><span className="badge-icon">🔴</span><span className="badge-text">ACTIVE - Day {floodInfo.daysActive}</span></div>}
+            <div className="detail-row"><strong>Alert:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
+            {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
           </>
         )}
-
-        {/* EARTHQUAKES */}
-        {type === 'earthquakes' && (
-          <>
-            <div className="detail-row">
-              <strong>Magnitude:</strong> 
-              <span className="detail-value highlight">M{item.magnitude?.toFixed(1)}</span>
-            </div>
-            <div className="detail-row">
-              <strong>Depth:</strong> 
-              <span className="detail-value">{item.depth?.toFixed(1)} km</span>
-            </div>
-            {item.felt > 0 && (
-              <div className="detail-row">
-                <strong>Felt Reports:</strong> 
-                <span className="detail-value">{item.felt}</span>
-              </div>
-            )}
-            {item.alert && (
-              <div className="detail-row">
-                <strong>Alert:</strong> 
-                <span className={`detail-value alert-${item.alert?.toLowerCase()}`}>
-                  {item.alert}
-                </span>
-              </div>
-            )}
-            {item.tsunami === 1 && (
-              <div className="alert-box tsunami">⚠️ TSUNAMI WARNING</div>
-            )}
-            {item.time && (
-              <div className="detail-row">
-                <strong>Time:</strong> 
-                <span className="detail-value">{formatTime(item.time)}</span>
-              </div>
-            )}
-          </>
-        )}
-        
-        {/* VOLCANOES */}
-        {type === 'volcanoes' && (
-          <>
-            <div className="detail-row">
-              <strong>Alert Level:</strong> 
-              <span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>
-                {item.alertLevel}
-              </span>
-            </div>
-            <div className="detail-row">
-              <strong>Country:</strong> 
-              <span className="detail-value">{item.country}</span>
-            </div>
-            {item.population > 0 && (
-              <div className="detail-row">
-                <strong>Population at Risk:</strong> 
-                <span className="detail-value highlight">{formatNumber(item.population)}</span>
-              </div>
-            )}
-            {item.vei > 0 && (
-              <div className="detail-row">
-                <strong>VEI:</strong> 
-                <span className="detail-value">{item.vei}</span>
-              </div>
-            )}
-            {item.lastUpdate && (
-              <div className="detail-row">
-                <strong>Updated:</strong> 
-                <span className="detail-value">{formatTime(item.lastUpdate)}</span>
-              </div>
-            )}
-          </>
-        )}
-        
-        {/* CYCLONES */}
         {type === 'cyclones' && (
           <>
-            <div className="detail-row">
-              <strong>Storm Type:</strong> 
-              <span className="detail-value highlight">{item.stormType || 'Tropical Cyclone'}</span>
-            </div>
-            <div className="detail-row">
-              <strong>Category:</strong> 
-              <span className="detail-value highlight">{item.category || 'Unknown'}</span>
-            </div>
-            {item.windSpeed > 0 && (
-              <div className="detail-row">
-                <strong>Wind Speed:</strong> 
-                <span className="detail-value">{item.windSpeed} km/h ({Math.round(item.windSpeed * 0.621371)} mph)</span>
-              </div>
-            )}
-            {item.pressure > 0 && item.pressure < 1000 && (
-              <div className="detail-row">
-                <strong>Pressure:</strong> 
-                <span className="detail-value">{item.pressure} mb</span>
-              </div>
-            )}
-            {item.affectedCountries?.length > 0 && (
-              <div className="detail-row">
-                <strong>Affected Areas:</strong> 
-                <span className="detail-value">{item.affectedCountries.join(', ')}</span>
-              </div>
-            )}
-            {item.population > 0 && (
-              <div className="detail-row">
-                <strong>Population at Risk:</strong> 
-                <span className="detail-value highlight">{formatNumber(item.population)}</span>
-              </div>
-            )}
-            {item.isActive && (
-              <div className="active-flood-badge" style={{background: 'rgba(0, 255, 204, 0.2)', borderColor: 'rgba(0, 255, 204, 0.5)'}}>
-                <span className="badge-icon">🌀</span>
-                <span className="badge-text" style={{color: '#00ffcc'}}>ACTIVE STORM</span>
-              </div>
-            )}
+            {item.stormType && <div className="detail-row"><strong>Type:</strong><span className="detail-value">{item.stormType}</span></div>}
+            {item.windSpeed && <div className="detail-row"><strong>Wind:</strong><span className="detail-value highlight">{item.windSpeed} km/h</span></div>}
           </>
         )}
-        
-        {/* DROUGHTS */}
-        {type === 'droughts' && (
+        {type === 'volcanoes' && (
           <>
-            <div className="detail-row">
-              <strong>Alert Level:</strong> 
-              <span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>
-                {item.alertLevel}
-              </span>
-            </div>
-            <div className="detail-row">
-              <strong>Country:</strong> 
-              <span className="detail-value">{item.country}</span>
-            </div>
-            {item.population > 0 && (
-              <div className="detail-row">
-                <strong>Population Affected:</strong> 
-                <span className="detail-value highlight">{formatNumber(item.population)}</span>
-              </div>
-            )}
-            {item.duration > 0 && (
-              <div className="detail-row">
-                <strong>Duration:</strong> 
-                <span className="detail-value">{item.duration} days</span>
-              </div>
-            )}
+            <div className="detail-row"><strong>Alert:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
+            {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
           </>
         )}
-        
-        {/* FIRES (FIRMS) */}
-        {type === 'fires' && (
+        {type === 'landslides' && (
           <>
-            <div className="detail-row">
-              <strong>Intensity (FRP):</strong> 
-              <span className="detail-value highlight">{item.frp?.toFixed(1)} MW</span>
-            </div>
-            <div className="detail-row">
-              <strong>Brightness:</strong> 
-              <span className="detail-value">{item.brightness?.toFixed(1)}K</span>
-            </div>
-            <div className="detail-row">
-              <strong>Confidence:</strong> 
-              <span className="detail-value">{item.confidence}</span>
-            </div>
-            <div className="detail-row">
-              <strong>Satellite:</strong> 
-              <span className="detail-value">{item.satellite}</span>
-            </div>
-            <div className="detail-row">
-              <strong>Detected:</strong> 
-              <span className="detail-value">{item.date} {item.time}</span>
-            </div>
+            {item.fatalities > 0 && <div className="detail-row"><strong>Fatalities:</strong><span className="detail-value highlight">{item.fatalities}</span></div>}
+            {item.trigger && <div className="detail-row"><strong>Trigger:</strong><span className="detail-value">{item.trigger}</span></div>}
           </>
         )}
+        {type === 'tsunamis' && <div className="alert-box tsunami">⚠️ {severity}</div>}
+      </div>
+      <button className="popup-detail-btn" onClick={() => onOpenDrawer(item, type)}>View Full Details →</button>
+    </div>
+  );
+};
+
+// =====================================================================
+// LIVE FEED COMPONENT
+// =====================================================================
+const FEED_ICONS = {
+  earthquakes: { icon: '🌍', color: '#ff4444', label: 'Earthquake' },
+  wildfires:   { icon: '🔥', color: '#ff6600', label: 'Wildfire' },
+  fires:       { icon: '🔥', color: '#ff8800', label: 'Hotspot' },
+  floods:      { icon: '🌊', color: '#4488ff', label: 'Flood' },
+  cyclones:    { icon: '🌀', color: '#00ccff', label: 'Cyclone' },
+  volcanoes:   { icon: '🌋', color: '#ff3333', label: 'Volcano' },
+  droughts:    { icon: '🏜️', color: '#cc9900', label: 'Drought' },
+  spaceweather:{ icon: '☀️', color: '#ff00ff', label: 'Space' },
+  weather:     { icon: '⚠️', color: '#ffaa00', label: 'Weather' },
+  landslides:  { icon: '⛰️', color: '#8B4513', label: 'Landslide' },
+  tsunamis:    { icon: '🌊', color: '#0066cc', label: 'Tsunami' },
+};
+
+const MAX_FEED_ITEMS = 80;
+
+const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
+  const [feedItems, setFeedItems] = useState([]);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isAutoScroll, setIsAutoScroll] = useState(true);
+  const prevDataRef = useRef({});
+  const listRef = useRef(null);
+
+  useEffect(() => {
+    const prevData = prevDataRef.current;
+    const newItems = [];
+
+    Object.keys(data).forEach(type => {
+      if (!data[type]?.length || type === 'fires') return;
+      const prevIds = new Set((prevData[type] || []).map(i => i.id || i.name || JSON.stringify(getEventCoords(i))));
+
+      data[type].forEach(item => {
+        const id = item.id || item.name || JSON.stringify(getEventCoords(item));
+        if (prevIds.has(id)) return;
+        const coords = getEventCoords(item);
+        if (!coords) return;
+        const meta = FEED_ICONS[type] || { icon: '❓', color: '#888', label: type };
+        const ts = getEventTimestamp(item, type);
+        const severity = DISASTER_CONFIG[type]?.getSeverity?.(item) || '';
         
-        {/* WEATHER */}
-        {type === 'weather' && (
-          <>
-            <div className="detail-row">
-              <strong>Severity:</strong> 
-              <span className={`detail-value severity-${item.severity?.toLowerCase()}`}>
-                {item.severity}
-              </span>
-            </div>
-            <div className="detail-row">
-              <strong>Urgency:</strong> 
-              <span className="detail-value">{item.urgency}</span>
-            </div>
-            {item.areas && (
-              <div className="detail-row">
-                <strong>Areas:</strong> 
-                <span className="detail-value">{item.areas}</span>
-              </div>
-            )}
-            {item.headline && (
-              <div className="detail-description">{item.headline}</div>
-            )}
-          </>
-        )}
-        
-        {/* LOCATION FOR ALL TYPES */}
-        {(item.coordinates || (item.latitude && item.longitude)) && (
-          <div className="detail-row coordinates">
-            <strong>Location:</strong> 
-            <span className="detail-value">
-              {item.coordinates 
-                ? `${item.coordinates[1]?.toFixed(3)}, ${item.coordinates[0]?.toFixed(3)}`
-                : `${item.latitude?.toFixed(3)}, ${item.longitude?.toFixed(3)}`}
-            </span>
+        newItems.push({
+          feedId: `${type}_${id}_${Date.now()}`,
+          type, ...meta, severity,
+          title: item.name || item.place || item.event || meta.label,
+          lat: coords.lat, lon: coords.lon,
+          timestamp: ts, isNew: true,
+          item // keep reference for drawer
+        });
+      });
+    });
+
+    if (newItems.length > 0) {
+      // Sort newest first so the feed shows a mix of types, not just whichever has most items
+      newItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setFeedItems(prev => {
+        const combined = [...newItems, ...prev].slice(0, MAX_FEED_ITEMS);
+        return combined;
+      });
+      if (isMinimized) setUnreadCount(prev => prev + newItems.length);
+    }
+
+    prevDataRef.current = { ...data };
+  }, [data, isMinimized]);
+
+  useEffect(() => {
+    if (isAutoScroll && listRef.current) {
+      listRef.current.scrollTop = 0;
+    }
+  }, [feedItems, isAutoScroll]);
+
+  const handleScroll = () => {
+    if (!listRef.current) return;
+    setIsAutoScroll(listRef.current.scrollTop < 10);
+  };
+
+  if (isMinimized) {
+    return (
+      <div className="livefeed-minimized-pill" onClick={() => { setIsMinimized(false); setUnreadCount(0); }}>
+        <span className="pill-pulse"></span>
+        <span className="pill-icon">📡</span>
+        <span className="pill-label">LIVE</span>
+        {unreadCount > 0 && <span className="pill-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`livefeed-container ${isHovered ? 'hovered' : ''}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div className="livefeed-header">
+        <div className="livefeed-header-left">
+          <span className={`livefeed-dot ${connected ? 'connected' : 'disconnected'}`}></span>
+          <span className="livefeed-title">LIVE FEED</span>
+          <span className="livefeed-count">{feedItems.length}</span>
+        </div>
+        <div className="livefeed-header-right">
+          {!isAutoScroll && (
+            <button className="livefeed-btn livefeed-btn-top" onClick={() => { if (listRef.current) listRef.current.scrollTop = 0; setIsAutoScroll(true); }}>↑ New</button>
+          )}
+          <button className="livefeed-btn" onClick={() => setIsMinimized(true)}>—</button>
+        </div>
+      </div>
+
+      <div className="livefeed-list" ref={listRef} onScroll={handleScroll}>
+        {feedItems.length === 0 ? (
+          <div className="livefeed-empty">
+            <span className="livefeed-empty-icon">📡</span>
+            <span>Waiting for events...</span>
           </div>
+        ) : (
+          feedItems.map(item => (
+            <div
+              key={item.feedId}
+              className={`livefeed-item ${item.isNew ? 'livefeed-item-new' : ''} ${activeEventId === item.feedId ? 'livefeed-item-active' : ''}`}
+              style={{ '--accent': item.color }}
+              onClick={() => onEventClick && onEventClick(item)}
+            >
+              <span className="livefeed-item-accent" style={{ background: item.color }}></span>
+              <div className="livefeed-item-icon" style={{ background: `${item.color}18` }}>
+                {item.icon}
+              </div>
+              <div className="livefeed-item-body">
+                <div className="livefeed-item-top">
+                  <span className="livefeed-item-label" style={{ color: item.color }}>{item.label}</span>
+                  {item.severity && /EXTREME|CRITICAL|ERUPTING|CAT.*[4-5]|WARNING/i.test(item.severity) && (
+                    <span className="livefeed-severity livefeed-severity-extreme">{item.severity}</span>
+                  )}
+                </div>
+                <div className="livefeed-item-title">{item.title}</div>
+                <div className="livefeed-item-time">{formatTime(item.timestamp)}</div>
+              </div>
+            </div>
+          ))
         )}
+      </div>
+      <div className="livefeed-footer">
+        <span className="livefeed-footer-text">ALL FREE SOURCES · CLICK TO FLY</span>
       </div>
     </div>
   );
 };
 
 // =====================================================================
-// MAIN APP COMPONENT
-// v3.2: Added flyTarget, activeEventId, highlightPos state + MapController
+// v4: CRITICAL EVENT ALERT MONITOR
+// =====================================================================
+const useCriticalAlerts = (data, alertsEnabled) => {
+  const seenCritical = useRef(new Set());
+  
+  useEffect(() => {
+    if (!alertsEnabled) return;
+    
+    Object.entries(data).forEach(([type, items]) => {
+      if (!items?.length) return;
+      const config = DISASTER_CONFIG[type];
+      if (!config?.isCritical) return;
+      
+      items.forEach(item => {
+        if (!config.isCritical(item)) return;
+        const id = item.id || item.name || JSON.stringify(getEventCoords(item));
+        if (seenCritical.current.has(id)) return;
+        seenCritical.current.add(id);
+        
+        // Play sound + browser notification
+        playAlertSound();
+        const title = `⚠️ ${config.name} Alert`;
+        const body = `${item.name || item.place || 'Critical event detected'} — ${config.getSeverity?.(item) || 'ALERT'}`;
+        sendBrowserNotification(title, body, config.icon);
+      });
+    });
+  }, [data, alertsEnabled]);
+};
+
+// =====================================================================
+// MAIN APP COMPONENT v4.0
 // =====================================================================
 function App() {
   const { rawData, connected, loading } = useRealtimeData();
   const [timeFilter, setTimeFilter] = useState(0);
   const [enabledLayers, setEnabledLayers] = useState(
-    Object.keys(DISASTER_CONFIG).reduce((acc, key) => ({ 
-      ...acc, 
-      [key]: DISASTER_CONFIG[key].enabled 
-    }), {})
+    Object.keys(DISASTER_CONFIG).reduce((acc, key) => ({ ...acc, [key]: DISASTER_CONFIG[key].enabled }), {})
   );
-  // v3.2: Click-to-fly state
+  
+  // Existing state
   const [flyTarget, setFlyTarget] = useState(null);
   const [activeEventId, setActiveEventId] = useState(null);
   const [highlightPos, setHighlightPos] = useState(null);
   const highlightTimer = useRef(null);
-
+  
+  // v4: New state
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [drawerItem, setDrawerItem] = useState(null);
+  const [drawerType, setDrawerType] = useState(null);
+  const [watchArea, setWatchArea] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('realnow_watcharea')); } catch { return null; }
+  });
+  const [alertsEnabled, setAlertsEnabled] = useState(() => {
+    try { return localStorage.getItem('realnow_alerts') === 'true'; } catch { return false; }
+  });
+  const [shareToast, setShareToast] = useState('');
+  
   const data = filterDataByTime(rawData, timeFilter);
+  
+  // v4: Critical alert monitor
+  useCriticalAlerts(data, alertsEnabled);
+  
+  // v4: Register PWA service worker
+  useEffect(() => { registerServiceWorker(); }, []);
+  
+  // v4: Handle deep link on mount
+  useEffect(() => {
+    const params = getShareParams();
+    if (params.lat && params.lon) {
+      setTimeout(() => {
+        setFlyTarget({ lat: params.lat, lon: params.lon, zoom: params.zoom || 8, _ts: Date.now() });
+      }, 2000);
+    }
+  }, []);
+  
+  // v4: Request notification permission
+  useEffect(() => {
+    if (alertsEnabled && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, [alertsEnabled]);
+  
+  // v4: Persist watch area
+  useEffect(() => {
+    if (watchArea) {
+      localStorage.setItem('realnow_watcharea', JSON.stringify(watchArea));
+    } else {
+      localStorage.removeItem('realnow_watcharea');
+    }
+  }, [watchArea]);
 
-  // v3.2: Handle feed item click → fly to location + highlight on map
+  // Feed click handler
   const handleFeedClick = useCallback((feedItem) => {
-    // Fly to the event's location
-    setFlyTarget({
-      lat: feedItem.lat,
-      lon: feedItem.lon,
-      zoom: 7,
-      _ts: Date.now() // force re-trigger even if same location
-    });
-    // Mark it active in the feed
+    setFlyTarget({ lat: feedItem.lat, lon: feedItem.lon, zoom: 7, _ts: Date.now() });
     setActiveEventId(feedItem.feedId);
-    // Show highlight ring on the map
-    setHighlightPos({
-      lat: feedItem.lat,
-      lon: feedItem.lon,
-      color: feedItem.color
-    });
-    // Clear highlight after 8 seconds
+    setHighlightPos({ lat: feedItem.lat, lon: feedItem.lon, color: feedItem.color });
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => {
-      setHighlightPos(null);
-      setActiveEventId(null);
-    }, 8000);
+    highlightTimer.current = setTimeout(() => { setHighlightPos(null); setActiveEventId(null); }, 8000);
   }, []);
 
+  // v4: Search select handler
+  const handleSearchSelect = useCallback((result) => {
+    setFlyTarget({ lat: result.lat, lon: result.lon, zoom: result.zoom || 10, _ts: Date.now() });
+  }, []);
+  
+  // v4: Watch area handler
+  const handleWatchArea = useCallback((area) => {
+    setWatchArea(area);
+    setFlyTarget({ lat: area.lat, lon: area.lon, zoom: 8, _ts: Date.now() });
+  }, []);
+
+  // v4: Open detail drawer
+  const handleOpenDrawer = useCallback((item, type) => {
+    setDrawerItem(item);
+    setDrawerType(type);
+  }, []);
+  
+  // v4: Timeline scrubber handler
+  const handleTimelineChange = useCallback((msAgo) => {
+    if (msAgo === 0) {
+      setTimeFilter(0);
+    } else {
+      setTimeFilter(msAgo);
+    }
+  }, []);
+
+  // v4: Share toast
+  const handleShare = useCallback((msg) => {
+    setShareToast(msg);
+    setTimeout(() => setShareToast(''), 2500);
+  }, []);
+
+  // Render markers
   const renderDisasterMarkers = (items, type) => {
     if (!enabledLayers[type] || !items?.length) return null;
-    
     const config = DISASTER_CONFIG[type];
     const markers = [];
     
     items.forEach((item, index) => {
-      let lat, lon;
-      
-      if (item.coordinates && Array.isArray(item.coordinates) && item.coordinates.length >= 2) {
-        lon = item.coordinates[0];
-        lat = item.coordinates[1];
-      } else if (item.latitude !== undefined && item.longitude !== undefined) {
-        lat = item.latitude;
-        lon = item.longitude;
-      } else {
-        return;
-      }
-      
-      if (isNaN(lat) || isNaN(lon)) return;
-      if (lat === 0 && lon === 0) return; // skip null-island fallbacks
+      const coords = getEventCoords(item);
+      if (!coords || isNaN(coords.lat) || isNaN(coords.lon)) return;
+      if (coords.lat === 0 && coords.lon === 0) return;
       
       const radius = config.getRadius ? config.getRadius(item) : 8;
       const opacity = config.getOpacity ? config.getOpacity(item) : 0.6;
       const severity = config.getSeverity ? config.getSeverity(item) : '';
-      
       const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
-      const displayName = type === 'floods' ? 
-        floodInfo.clearName : 
-        type === 'cyclones' && item.stormType ?
-        `${item.stormType}: ${item.name}` :
-        (item.name || item.place || config.name);
+      const displayName = type === 'floods' ? floodInfo?.clearName : (item.name || item.place || item.event || config.name);
       
       markers.push(
         <CircleMarker
-          key={`${type}_${item.id || index}`}
-          center={[lat, lon]}
+          key={`${type}-${index}`}
+          center={[coords.lat, coords.lon]}
           radius={radius}
           fillColor={config.color}
           color={config.color}
-          weight={2}
-          opacity={opacity + 0.2}
-          fillOpacity={opacity}
+          weight={1}
+          opacity={opacity}
+          fillOpacity={opacity * 0.6}
         >
-          <Tooltip direction="top" offset={[0, -10]} opacity={0.9}>
-            <div className="tooltip-content">
-              <strong>{config.icon} {severity}</strong>
-              <br />
-              {displayName}
-              {type === 'floods' && floodInfo?.isActive && (
-                <>
-                  <br />
-                  <span style={{color: '#ff6666', fontSize: '0.7em'}}>
-                    ⚠️ ACTIVE - Day {floodInfo.daysActive}
-                  </span>
-                </>
-              )}
-              {type === 'floods' && floodInfo && !floodInfo.isActive && (
-                <>
-                  <br />
-                  <span style={{color: '#999', fontSize: '0.7em'}}>
-                    {floodInfo.statusLabel || 'Ended'}
-                  </span>
-                </>
-              )}
+          <Tooltip direction="top" offset={[0, -10]} className="custom-tooltip">
+            <div style={{fontSize: '0.8em'}}>
+              <strong style={{color: config.color}}>{config.icon} {displayName}</strong>
+              {severity && <div style={{color: '#aaa', fontSize: '0.85em'}}>{severity}</div>}
               {type === 'cyclones' && item.isActive && (
-                <>
-                  <br />
-                  <span style={{color: '#00ffcc', fontSize: '0.7em'}}>
-                    ⚠️ ACTIVE STORM
-                  </span>
-                </>
+                <span style={{color: '#00ffcc', fontSize: '0.7em'}}>⚠️ ACTIVE STORM</span>
               )}
             </div>
           </Tooltip>
           <Popup>
-            <PopupContent item={item} type={type} config={config} />
+            <PopupContent item={item} type={type} config={config} onOpenDrawer={handleOpenDrawer} />
           </Popup>
         </CircleMarker>
       );
     });
-    
     return markers;
   };
 
@@ -1666,78 +1501,92 @@ function App() {
       <div className="loading-screen">
         <div className="loading-spinner">🌍</div>
         <div>Loading Real-Time Disaster Data...</div>
+        <div style={{fontSize: '0.8em', color: '#666', marginTop: '8px'}}>v4.0 — All Free Sources</div>
       </div>
     );
   }
 
   return (
     <div className="app-container">
-      <MapContainer
-        center={[20, 0]}
-        zoom={2}
-        className="map-container"
-        zoomControl={false}
-        worldCopyJump={true}
-      >
+      <MapContainer center={[20, 0]} zoom={2} className="map-container" zoomControl={false} worldCopyJump={true}>
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         
-        {/* v3.2: Fly-to controller for feed click navigation */}
         <MapController flyTarget={flyTarget} />
         
-        {Object.keys(data).map(type => 
-          renderDisasterMarkers(data[type], type)
-        )}
+        {/* v4: Heatmap layer */}
+        {heatmapEnabled && <HeatmapLayer data={data} enabledLayers={enabledLayers} />}
+        
+        {/* v4: Watch area circle */}
+        {watchArea && <WatchAreaCircle watchArea={watchArea} />}
+        
+        {/* Disaster markers */}
+        {Object.keys(data).map(type => renderDisasterMarkers(data[type], type))}
 
-        {/* v3.2: Pulsing highlight rings when feed item is clicked */}
+        {/* Highlight rings */}
         {highlightPos && (
           <>
-            <CircleMarker
-              center={[highlightPos.lat, highlightPos.lon]}
-              radius={22}
-              fillColor="transparent"
-              color={highlightPos.color || '#ffffff'}
-              weight={3}
-              opacity={0.9}
-              fillOpacity={0}
-              className="highlight-ring"
-            />
-            <CircleMarker
-              center={[highlightPos.lat, highlightPos.lon]}
-              radius={35}
-              fillColor="transparent"
-              color={highlightPos.color || '#ffffff'}
-              weight={1.5}
-              opacity={0.4}
-              fillOpacity={0}
-              className="highlight-ring-outer"
-            />
+            <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={22} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={3} opacity={0.9} fillOpacity={0} className="highlight-ring" />
+            <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={35} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={1.5} opacity={0.4} fillOpacity={0} className="highlight-ring-outer" />
           </>
         )}
       </MapContainer>
       
-      <StatsDashboard 
-        data={data} 
-        enabledLayers={enabledLayers}
-        setEnabledLayers={setEnabledLayers}
-      />
+      {/* v4: Location Search */}
+      <LocationSearch onSelect={handleSearchSelect} onWatchArea={handleWatchArea} />
       
-      <TimeControl 
-        timeFilter={timeFilter} 
-        setTimeFilter={setTimeFilter}
-        connected={connected}
-      />
-
-      {/* LIVE FEED - Translucent Chatter Box */}
-      {/* v3.2: Now with click-to-fly via onEventClick + activeEventId */}
-      <LiveFeed
-        data={data}
-        connected={connected}
-        onEventClick={handleFeedClick}
-        activeEventId={activeEventId}
-      />
+      {/* Stats Dashboard */}
+      <StatsDashboard data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers} connected={connected} />
+      
+      {/* v4: Region stats for watch area */}
+      {watchArea && <RegionStats data={data} watchArea={watchArea} />}
+      
+      {/* Time Control */}
+      <TimeControl timeFilter={timeFilter} setTimeFilter={setTimeFilter} connected={connected} />
+      
+      {/* v4: Timeline Scrubber */}
+      <TimelineScrubber data={data} onTimeChange={handleTimelineChange} />
+      
+      {/* v4: Controls bar (heatmap toggle, alerts toggle, clear watch) */}
+      <div className="v4-controls">
+        <button
+          className={`v4-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
+          onClick={() => setHeatmapEnabled(!heatmapEnabled)}
+          title="Toggle heatmap"
+        >
+          🔥 Heatmap
+        </button>
+        <button
+          className={`v4-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
+          onClick={() => {
+            const newVal = !alertsEnabled;
+            setAlertsEnabled(newVal);
+            localStorage.setItem('realnow_alerts', String(newVal));
+            if (newVal && 'Notification' in window && Notification.permission === 'default') {
+              Notification.requestPermission();
+            }
+          }}
+          title="Toggle alerts"
+        >
+          🔔 Alerts
+        </button>
+        {watchArea && (
+          <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title="Clear watch area">
+            ❌ Clear Watch
+          </button>
+        )}
+      </div>
+      
+      {/* Live Feed */}
+      <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
+      
+      {/* v4: Detail Drawer */}
+      <DetailDrawer item={drawerItem} type={drawerType} onClose={() => { setDrawerItem(null); setDrawerType(null); }} onShare={handleShare} />
+      
+      {/* v4: Share toast */}
+      {shareToast && <div className="share-toast">{shareToast}</div>}
     </div>
   );
 }
