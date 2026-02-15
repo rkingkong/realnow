@@ -202,6 +202,33 @@ const DISASTER_CONFIG = {
       return 'QUIET';
     },
     getOpacity: (item) => Math.min((item.currentKp || 0) / 10, 0.9)
+  },
+
+  weather: { 
+    color: '#ffaa00', 
+    icon: '⚠️', 
+    name: 'Weather',
+    enabled: true,
+    getRadius: (item) => {
+      const sev = (item.severity || '').toLowerCase();
+      if (sev === 'extreme') return 14;
+      if (sev === 'severe') return 11;
+      if (sev === 'moderate') return 8;
+      return 6;
+    },
+    getSeverity: (item) => {
+      const sev = (item.severity || '').toUpperCase();
+      if (sev === 'EXTREME') return 'EXTREME';
+      if (sev === 'SEVERE') return 'SEVERE';
+      if (sev === 'MODERATE') return 'MODERATE';
+      return item.event || 'ALERT';
+    },
+    getOpacity: (item) => {
+      const sev = (item.severity || '').toLowerCase();
+      if (sev === 'extreme') return 0.9;
+      if (sev === 'severe') return 0.7;
+      return 0.5;
+    }
   }
 };
 
@@ -997,18 +1024,21 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
   
   if (isMinimized) {
     return (
-      <div className="stats-dashboard minimized" style={{position:'relative',zIndex:1000}} onClick={() => setIsMinimized(false)}>
-        <span className="minimize-label">📊 Stats</span>
-        {criticalCount > 0 && <span className="critical-badge">{criticalCount}</span>}
+      <div className="stats-dashboard enhanced minimized">
+        <div className="minimize-toggle" onClick={() => setIsMinimized(false)} style={{cursor:'pointer'}}>
+          <span className="toggle-icon">📊</span>
+          <span className="toggle-text">Stats</span>
+          {criticalCount > 0 && <span className="critical-badge">{criticalCount}</span>}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="stats-dashboard" style={{position:'relative',zIndex:1000}}>
-      <div className="stats-header">
-        <span>GLOBAL MONITORING</span>
-        <button className="minimize-btn" onClick={() => setIsMinimized(true)}>▬</button>
+    <div className="stats-dashboard enhanced">
+      <div className="dashboard-header">
+        <h3 className="dashboard-title">GLOBAL MONITORING</h3>
+        <button className="minimize-toggle in-header" onClick={() => setIsMinimized(true)}>▬</button>
       </div>
       
       <div className="stats-grid">
@@ -1020,7 +1050,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
           return (
             <div 
               key={key}
-              className={`stat-card ${enabledLayers[key] ? 'active' : ''} ${severityClass}`}
+              className={`stat-card enhanced ${enabledLayers[key] ? 'active' : ''} ${severityClass}`}
               onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}
             >
               <div className="stat-header">
@@ -1576,6 +1606,7 @@ function App() {
       }
       
       if (isNaN(lat) || isNaN(lon)) return;
+      if (lat === 0 && lon === 0) return; // skip null-island fallbacks
       
       const radius = config.getRadius ? config.getRadius(item) : 8;
       const opacity = config.getOpacity ? config.getOpacity(item) : 0.6;
