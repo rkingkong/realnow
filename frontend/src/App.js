@@ -13,34 +13,7 @@ import './LiveFeed.css';
 // =====================================================================
 const DISASTER_CONFIG = {
   
-  wildfires: { 
-    color: '#ff6600', 
-    icon: '🔥', 
-    name: 'Wildfires',
-    enabled: true,
-    getRadius: (item) => {
-      if (item.affectedArea > 1000) return 20;
-      if (item.affectedArea > 500) return 15;
-      if (item.alertLevel === 'Red') return 18;
-      if (item.alertLevel === 'Orange') return 14;
-      return 12;
-    },
-    getSeverity: (item) => {
-      if (!item.isActive && item.isActive !== undefined) {
-        return item.status === 'just_ended' ? 'JUST CONTAINED' : 'CONTAINED';
-      }
-      const level = item.alertLevel?.toUpperCase();
-      if (level === 'RED') return 'CRITICAL';
-      if (level === 'ORANGE') return 'SEVERE';
-      if (item.affectedArea > 1000) return 'MAJOR';
-      return 'ACTIVE';
-    },
-    getOpacity: (item) => {
-      if (!item.isActive && item.isActive !== undefined) return 0.35;
-      return item.alertLevel === 'Red' ? 0.9 : 0.7;
-    }
-  },
-  
+  // === ROW 1: GEOLOGICAL + ATMOSPHERIC ===
   earthquakes: { 
     color: '#ff4444', 
     icon: '🌍', 
@@ -68,47 +41,6 @@ const DISASTER_CONFIG = {
       if (mag >= 5) return 0.7;
       return 0.5;
     }
-  },
-
-  fires: { 
-    color: '#ff8800', 
-    icon: '🔥', 
-    name: 'Fires',
-    enabled: true,
-    getRadius: (item) => {
-      const frp = item.frp || 0;
-      if (frp > 500) return 15;
-      if (frp > 200) return 10;
-      if (frp > 100) return 8;
-      return Math.max(item.brightness / 100, 4);
-    },
-    getSeverity: (item) => {
-      const frp = item.frp || 0;
-      if (frp > 500) return 'EXTREME FIRE';
-      if (frp > 200) return 'HIGH INTENSITY';
-      if (frp > 100) return 'MODERATE';
-      return item.severity?.toUpperCase() || 'LOW';
-    },
-    getOpacity: (item) => item.confidence === 'high' ? 0.8 : 0.5
-  },
-
-  floods: { 
-    color: '#4488ff', 
-    icon: '🌊', 
-    name: 'Floods',
-    enabled: true,
-    getRadius: (item) => {
-      if (item.alertLevel === 'Red') return 18;
-      if (item.alertLevel === 'Orange') return 14;
-      return 10;
-    },
-    getSeverity: (item) => {
-      const level = item.alertLevel?.toUpperCase();
-      if (level === 'RED') return 'SEVERE';
-      if (level === 'ORANGE') return 'MODERATE';
-      return 'LOW';
-    },
-    getOpacity: (item) => item.alertLevel === 'Red' ? 0.8 : 0.5
   },
 
   volcanoes: { 
@@ -157,14 +89,102 @@ const DISASTER_CONFIG = {
     }
   },
 
-  tsunamis: { 
-    color: '#0066ff', 
-    icon: '🌊', 
-    name: 'Tsunamis',
+  // === ROW 2: FIRE + WATER ===
+  fires: { 
+    color: '#ff8800', 
+    icon: '🔥', 
+    name: 'Hotspots',
     enabled: true,
-    getRadius: () => 20,
-    getSeverity: (item) => item.severity?.toUpperCase() || 'ALERT',
-    getOpacity: () => 0.8
+    getRadius: (item) => {
+      const frp = item.frp || 0;
+      if (frp > 500) return 15;
+      if (frp > 200) return 10;
+      if (frp > 100) return 8;
+      return Math.max(item.brightness / 100, 4);
+    },
+    getSeverity: (item) => {
+      const frp = item.frp || 0;
+      if (frp > 500) return 'EXTREME FIRE';
+      if (frp > 200) return 'HIGH INTENSITY';
+      if (frp > 100) return 'MODERATE';
+      return item.severity?.toUpperCase() || 'LOW';
+    },
+    getOpacity: (item) => item.confidence === 'high' ? 0.8 : 0.5
+  },
+
+  wildfires: { 
+    color: '#ff6600', 
+    icon: '🔥', 
+    name: 'Wildfires',
+    enabled: true,
+    getRadius: (item) => {
+      if (item.affectedArea > 1000) return 20;
+      if (item.affectedArea > 500) return 15;
+      if (item.alertLevel === 'Red') return 18;
+      if (item.alertLevel === 'Orange') return 14;
+      return 12;
+    },
+    getSeverity: (item) => {
+      if (!item.isActive && item.isActive !== undefined) {
+        return item.status === 'just_ended' ? 'JUST CONTAINED' : 'CONTAINED';
+      }
+      const level = item.alertLevel?.toUpperCase();
+      if (level === 'RED') return 'CRITICAL';
+      if (level === 'ORANGE') return 'SEVERE';
+      if (item.affectedArea > 1000) return 'MAJOR';
+      return 'ACTIVE';
+    },
+    getOpacity: (item) => {
+      if (!item.isActive && item.isActive !== undefined) return 0.35;
+      return item.alertLevel === 'Red' ? 0.9 : 0.7;
+    }
+  },
+
+  floods: { 
+    color: '#4488ff', 
+    icon: '🌊', 
+    name: 'Floods',
+    enabled: true,
+    getRadius: (item) => {
+      if (item.alertLevel === 'Red') return 18;
+      if (item.alertLevel === 'Orange') return 14;
+      return 10;
+    },
+    getSeverity: (item) => {
+      const level = item.alertLevel?.toUpperCase();
+      if (level === 'RED') return 'SEVERE';
+      if (level === 'ORANGE') return 'MODERATE';
+      return 'LOW';
+    },
+    getOpacity: (item) => item.alertLevel === 'Red' ? 0.8 : 0.5
+  },
+
+  // === ROW 3: ALERTS + MONITORING ===
+  weather: { 
+    color: '#ffaa00', 
+    icon: '⚠️', 
+    name: 'Weather',
+    enabled: true,
+    getRadius: (item) => {
+      const sev = (item.severity || '').toLowerCase();
+      if (sev === 'extreme') return 14;
+      if (sev === 'severe') return 11;
+      if (sev === 'moderate') return 8;
+      return 6;
+    },
+    getSeverity: (item) => {
+      const sev = (item.severity || '').toUpperCase();
+      if (sev === 'EXTREME') return 'EXTREME';
+      if (sev === 'SEVERE') return 'SEVERE';
+      if (sev === 'MODERATE') return 'MODERATE';
+      return item.event || 'ALERT';
+    },
+    getOpacity: (item) => {
+      const sev = (item.severity || '').toLowerCase();
+      if (sev === 'extreme') return 0.9;
+      if (sev === 'severe') return 0.7;
+      return 0.5;
+    }
   },
 
   droughts: { 
@@ -202,33 +222,6 @@ const DISASTER_CONFIG = {
       return 'QUIET';
     },
     getOpacity: (item) => Math.min((item.currentKp || 0) / 10, 0.9)
-  },
-
-  weather: { 
-    color: '#ffaa00', 
-    icon: '⚠️', 
-    name: 'Weather',
-    enabled: true,
-    getRadius: (item) => {
-      const sev = (item.severity || '').toLowerCase();
-      if (sev === 'extreme') return 14;
-      if (sev === 'severe') return 11;
-      if (sev === 'moderate') return 8;
-      return 6;
-    },
-    getSeverity: (item) => {
-      const sev = (item.severity || '').toUpperCase();
-      if (sev === 'EXTREME') return 'EXTREME';
-      if (sev === 'SEVERE') return 'SEVERE';
-      if (sev === 'MODERATE') return 'MODERATE';
-      return item.event || 'ALERT';
-    },
-    getOpacity: (item) => {
-      const sev = (item.severity || '').toLowerCase();
-      if (sev === 'extreme') return 0.9;
-      if (sev === 'severe') return 0.7;
-      return 0.5;
-    }
   }
 };
 
@@ -458,11 +451,10 @@ const MapController = ({ flyTarget }) => {
 const FEED_ICONS = {
   earthquakes: { icon: '🌍', color: '#ff4444', label: 'Earthquake' },
   wildfires:   { icon: '🔥', color: '#ff6600', label: 'Wildfire' },
-  fires:       { icon: '🔥', color: '#ff8800', label: 'Fire' },
+  fires:       { icon: '🔥', color: '#ff8800', label: 'Hotspot' },
   floods:      { icon: '🌊', color: '#4488ff', label: 'Flood' },
   cyclones:    { icon: '🌀', color: '#00ccff', label: 'Cyclone' },
   volcanoes:   { icon: '🌋', color: '#ff3333', label: 'Volcano' },
-  tsunamis:    { icon: '🌊', color: '#0066ff', label: 'Tsunami' },
   droughts:    { icon: '🏜️', color: '#cc9900', label: 'Drought' },
   spaceweather:{ icon: '☀️', color: '#ff00ff', label: 'Space Weather' },
   weather:     { icon: '⚠️', color: '#ffaa00', label: 'Weather' },
@@ -540,7 +532,7 @@ const getEventTitle = (item, type) => {
     case 'wildfires':
       return item.name || item.place || 'Wildfire detected';
     case 'fires':
-      return item.place || item.name || `Fire (FRP ${item.frp || '?'})`;
+      return item.place || item.name || `Hotspot (FRP ${item.frp || '?'})`;
     case 'floods':
       return item.name || item.place || 'Flood event';
     case 'cyclones':
@@ -549,8 +541,6 @@ const getEventTitle = (item, type) => {
         : item.name || 'Tropical system';
     case 'volcanoes':
       return item.name || item.place || 'Volcanic activity';
-    case 'tsunamis':
-      return item.name || item.place || 'Tsunami alert';
     case 'droughts':
       return item.name || item.place || 'Drought warning';
     case 'spaceweather':
@@ -928,7 +918,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         const maxMag = Math.max(...items.map(e => e.magnitude || 0));
         const major = items.filter(e => e.magnitude >= 6).length;
         if (maxMag > 0) details = `M${maxMag.toFixed(1)} max`;
-        if (major > 0) details += ` • ${major} major`;
+        if (major > 0) details += (details ? ' • ' : '') + `${major} major`;
         severity = maxMag >= 7 ? 'EXTREME' : maxMag >= 6 ? 'HIGH' : maxMag >= 5 ? 'MODERATE' : 'LOW';
         break;
       }
@@ -936,7 +926,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         const red = items.filter(v => v.alertLevel === 'Red').length;
         const orange = items.filter(v => v.alertLevel === 'Orange').length;
         if (red > 0) details = `${red} erupting`;
-        if (orange > 0) details += details ? ` • ${orange} warning` : `${orange} warning`;
+        if (orange > 0) details += (details ? ' • ' : '') + `${orange} warning`;
         severity = red > 0 ? 'EXTREME' : orange > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
@@ -956,15 +946,23 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         }
         
         const cat5 = items.filter(c => c.windSpeed > 250).length;
-        if (cat5 > 0) details += ` • ${cat5} Cat5`;
+        if (cat5 > 0) details += (details ? ' • ' : '') + `${cat5} Cat5`;
         severity = maxWind > 250 ? 'EXTREME' : maxWind > 180 ? 'HIGH' : items.length > 0 ? 'MODERATE' : 'LOW';
+        break;
+      }
+      case 'fires': {
+        const extreme = items.filter(f => f.frp > 500).length;
+        const high = items.filter(f => f.frp > 200).length;
+        if (extreme > 0) details = `${extreme} extreme`;
+        if (high > 0) details += (details ? ' • ' : '') + `${high} high intensity`;
+        severity = extreme > 10 ? 'EXTREME' : extreme > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
       case 'wildfires': {
         const redWildfires = items.filter(w => w.alertLevel === 'Red').length;
         const orangeWildfires = items.filter(w => w.alertLevel === 'Orange').length;
         if (redWildfires > 0) details = `${redWildfires} critical`;
-        if (orangeWildfires > 0) details += ` • ${orangeWildfires} severe`;
+        if (orangeWildfires > 0) details += (details ? ' • ' : '') + `${orangeWildfires} severe`;
         severity = redWildfires > 0 ? 'HIGH' : orangeWildfires > 0 ? 'MODERATE' : 'LOW';
         break;
       }
@@ -975,24 +973,24 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
           return info.isActive;
         }).length;
         if (redFloods > 0) details = `${redFloods} critical`;
-        if (activeFloods > 0) details += ` • ${activeFloods} active now`;
+        if (activeFloods > 0) details += (details ? ' • ' : '') + `${activeFloods} active now`;
         severity = redFloods > 0 ? 'HIGH' : 'MODERATE';
+        break;
+      }
+      case 'weather': {
+        const extremeWeather = items.filter(w => w.severity === 'Extreme').length;
+        const severeWeather = items.filter(w => w.severity === 'Severe').length;
+        if (extremeWeather > 0) details = `${extremeWeather} extreme`;
+        if (severeWeather > 0) details += (details ? ' • ' : '') + `${severeWeather} severe`;
+        severity = extremeWeather > 0 ? 'HIGH' : severeWeather > 0 ? 'MODERATE' : 'LOW';
         break;
       }
       case 'droughts': {
         const severe2 = items.filter(d => d.alertLevel === 'Red' || d.alertLevel === 'Orange').length;
         const totalPop = items.reduce((sum, d) => sum + (d.population || 0), 0);
         if (severe2 > 0) details = `${severe2} severe`;
-        if (totalPop > 0) details += ` • ${formatNumber(totalPop)} affected`;
+        if (totalPop > 0) details += (details ? ' • ' : '') + `${formatNumber(totalPop)} affected`;
         severity = severe2 > 5 ? 'HIGH' : 'MODERATE';
-        break;
-      }
-      case 'fires': {
-        const extreme = items.filter(f => f.frp > 500).length;
-        const high = items.filter(f => f.frp > 200).length;
-        if (extreme > 0) details = `${extreme} extreme`;
-        if (high > 0) details += ` • ${high} high intensity`;
-        severity = extreme > 10 ? 'EXTREME' : extreme > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
       case 'spaceweather': {
@@ -1000,14 +998,6 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers }) => {
         const sev = items[0]?.severity || 'quiet';
         details = `Kp ${kp} • ${sev}`;
         severity = kp >= 7 ? 'HIGH' : kp >= 5 ? 'MODERATE' : 'LOW';
-        break;
-      }
-      case 'weather': {
-        const extremeWeather = items.filter(w => w.severity === 'Extreme').length;
-        const severeWeather = items.filter(w => w.severity === 'Severe').length;
-        if (extremeWeather > 0) details = `${extremeWeather} extreme`;
-        if (severeWeather > 0) details += ` • ${severeWeather} severe`;
-        severity = extremeWeather > 0 ? 'HIGH' : severeWeather > 0 ? 'MODERATE' : 'LOW';
         break;
       }
       default:
