@@ -27,6 +27,7 @@ import './App.css';
 import './LiveFeed.css';
 import './v4-enhancements.css';
 import './v5-enhancements.css';
+import './mobile-fix.css';
 
 // v5: New component imports
 import { MapStyleSwitcher, DisasterPolygons, CycloneTrackLine } from './components/MapEnhancements';
