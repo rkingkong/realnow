@@ -1348,10 +1348,298 @@ const useCriticalAlerts = (data, alertsEnabled) => {
 };
 
 // =====================================================================
+// MOBILE DETECTION HOOK
+// =====================================================================
+const useIsMobile = (breakpoint = 640) => {
+  const [isMobile, setIsMobile] = useState(() => 
+    typeof window !== 'undefined' ? window.innerWidth <= breakpoint : false
+  );
+  
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= breakpoint);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [breakpoint]);
+  
+  return isMobile;
+};
+
+// =====================================================================
+// MOBILE MENU COMPONENT — Unified drawer for all controls
+// =====================================================================
+const MobileMenu = ({
+  data, enabledLayers, setEnabledLayers, connected,
+  timeFilter, setTimeFilter,
+  heatmapEnabled, setHeatmapEnabled,
+  alertsEnabled, setAlertsEnabled,
+  watchArea, setWatchArea,
+  onSearchSelect, onWatchArea
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [showAlerts, setShowAlerts] = useState(false);
+  // Search state (embedded)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [watchRadius, setWatchRadius] = useState(200);
+  const debounceRef = useRef(null);
+  
+  const doSearch = useCallback((q) => {
+    if (q.length < 2) { setSearchResults([]); return; }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`,
+          { headers: { 'User-Agent': 'RealNow-DisasterTracker/4.0' } }
+        );
+        const d = await res.json();
+        setSearchResults(d);
+        setSearchOpen(d.length > 0);
+      } catch (e) { console.error('Search error:', e); }
+    }, 400);
+  }, []);
+
+  const handleSearchSelect = (result) => {
+    onSearchSelect({ lat: parseFloat(result.lat), lon: parseFloat(result.lon), name: result.display_name, zoom: 10 });
+    setSearchQuery(result.display_name.split(',')[0]);
+    setSearchOpen(false);
+    setIsOpen(false);
+  };
+
+  const handleWatch = () => {
+    const selected = searchResults[0];
+    if (selected) {
+      onWatchArea({ lat: parseFloat(selected.lat), lon: parseFloat(selected.lon), name: selected.display_name.split(',')[0], radius: watchRadius });
+      setIsOpen(false);
+    }
+  };
+
+  const getStats = (type, items) => {
+    if (!items?.length) return { severity: 'NONE', count: 0, details: '' };
+    let details = '', severity = 'LOW';
+    switch(type) {
+      case 'earthquakes': {
+        const maxMag = Math.max(...items.map(e => e.magnitude || 0));
+        const major = items.filter(e => e.magnitude >= 6).length;
+        if (maxMag > 0) details = `M${maxMag.toFixed(1)} max`;
+        if (major > 0) details += (details ? ' · ' : '') + `${major} major`;
+        severity = maxMag >= 7 ? 'EXTREME' : maxMag >= 6 ? 'HIGH' : maxMag >= 5 ? 'MODERATE' : 'LOW';
+        break;
+      }
+      case 'floods': {
+        const active = items.filter(f => formatFloodInfo(f).isActive).length;
+        if (active > 0) details = `${active} active`;
+        severity = active > 3 ? 'HIGH' : active > 0 ? 'MODERATE' : 'LOW';
+        break;
+      }
+      default: {
+        details = items.length > 5 ? `${items.length} events` : '';
+        severity = items.length > 10 ? 'HIGH' : 'MODERATE';
+      }
+    }
+    return { severity, count: items.length, details };
+  };
+
+  const allTypes = Object.keys(DISASTER_CONFIG);
+  const totalEvents = allTypes.reduce((sum, type) => sum + (data[type]?.length || 0), 0);
+  let criticalCount = 0;
+  allTypes.forEach(type => {
+    const items = data[type] || [];
+    items.forEach(item => {
+      if (DISASTER_CONFIG[type].isCritical && DISASTER_CONFIG[type].isCritical(item)) criticalCount++;
+    });
+  });
+
+  const currentFilter = TIME_FILTERS.find(f => f.value === timeFilter) || TIME_FILTERS[0];
+
+  return (
+    <>
+      {/* ===== TOP BAR: Search + Menu button ===== */}
+      <div className="m-topbar">
+        <div className="m-search-row">
+          <span className="m-search-icon">🔍</span>
+          <input
+            type="text"
+            className="m-search-input"
+            placeholder="Search location..."
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); doSearch(e.target.value); }}
+            onFocus={() => { if (searchResults.length > 0) setSearchOpen(true); }}
+          />
+          {searchQuery && (
+            <button className="m-search-clear" onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchOpen(false); }}>✕</button>
+          )}
+        </div>
+        <button className="m-menu-btn" onClick={() => setIsOpen(!isOpen)}>
+          {isOpen ? '✕' : '☰'}
+          {!isOpen && criticalCount > 0 && <span className="m-menu-badge">{criticalCount}</span>}
+        </button>
+      </div>
+
+      {/* ===== SEARCH RESULTS DROPDOWN (below topbar) ===== */}
+      {searchOpen && searchResults.length > 0 && (
+        <div className="m-search-results">
+          {searchResults.map((r, i) => (
+            <div key={i} className="m-search-result-item" onClick={() => handleSearchSelect(r)}>
+              <span>📍</span>
+              <span className="m-search-result-text">{r.display_name}</span>
+            </div>
+          ))}
+          <div className="m-search-watch-row">
+            <select className="m-watch-select" value={watchRadius} onChange={(e) => setWatchRadius(parseInt(e.target.value))}>
+              <option value={50}>50 km</option><option value={100}>100 km</option>
+              <option value={200}>200 km</option><option value={500}>500 km</option>
+            </select>
+            <button className="m-watch-btn" onClick={handleWatch}>👁️ Watch</button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== BOTTOM STATUS BAR ===== */}
+      <div className="m-bottombar">
+        <div className="m-status-pill" onClick={() => setIsOpen(true)}>
+          <span className={`m-status-dot ${connected ? 'on' : ''}`}></span>
+          <span className="m-status-label">{currentFilter.displayName}</span>
+          <span className="m-status-count">📊 {totalEvents}</span>
+        </div>
+      </div>
+
+      {/* ===== MENU DRAWER (slides in from right) ===== */}
+      {isOpen && (
+        <>
+          <div className="m-menu-backdrop" onClick={() => setIsOpen(false)} />
+          <div className="m-menu-drawer">
+            <div className="m-menu-header">
+              <div>
+                <div className="m-menu-title">📊 DISASTER MONITOR</div>
+                <div className="m-menu-subtitle">
+                  <span className={`m-status-dot ${connected ? 'on' : ''}`}></span>
+                  {connected ? 'Streaming live' : 'Reconnecting...'}
+                </div>
+              </div>
+              <button className="m-menu-close" onClick={() => setIsOpen(false)}>✕</button>
+            </div>
+
+            <div className="m-menu-body">
+              {/* ── Stats Grid ── */}
+              <div className="m-section">
+                <div className="m-section-label">LAYERS</div>
+                <div className="m-stats-grid">
+                  {allTypes.map(key => {
+                    const config = DISASTER_CONFIG[key];
+                    const items = data[key] || [];
+                    const stats = getStats(key, items);
+                    const isEnabled = enabledLayers[key];
+                    return (
+                      <div
+                        key={key}
+                        className={`m-stat-card ${isEnabled ? 'active' : 'off'} sev-${stats.severity.toLowerCase()}`}
+                        onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}
+                      >
+                        <div className="m-stat-top">
+                          <span className="m-stat-icon">{config.icon}</span>
+                          <span className="m-stat-count">{stats.count}</span>
+                        </div>
+                        <div className="m-stat-name">{config.name}</div>
+                        {stats.details && <div className="m-stat-details">{stats.details}</div>}
+                        {stats.severity !== 'NONE' && stats.severity !== 'LOW' && (
+                          <div className={`m-sev-badge sev-${stats.severity.toLowerCase()}`}>{stats.severity}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── Controls ── */}
+              <div className="m-section">
+                <div className="m-section-label">CONTROLS</div>
+                <div className="m-controls-row">
+                  <button
+                    className={`m-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
+                    onClick={() => setHeatmapEnabled(!heatmapEnabled)}
+                  >
+                    🔥 Heatmap
+                  </button>
+                  <button
+                    className={`m-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
+                    onClick={() => {
+                      const newVal = !alertsEnabled;
+                      setAlertsEnabled(newVal);
+                      localStorage.setItem('realnow_alerts', String(newVal));
+                      if (newVal && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+                    }}
+                  >
+                    🔔 Alerts
+                  </button>
+                  {watchArea && (
+                    <button className="m-ctrl-btn" onClick={() => { setWatchArea(null); }}>
+                      ❌ Clear Watch
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Time Filter ── */}
+              <div className="m-section">
+                <div className="m-section-label">TIME FILTER</div>
+                <div className="m-time-grid">
+                  {TIME_FILTERS.map(f => (
+                    <button
+                      key={f.value}
+                      className={`m-time-btn ${timeFilter === f.value ? 'active' : ''}`}
+                      onClick={() => setTimeFilter(f.value)}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Critical Alerts ── */}
+              {criticalCount > 0 && (
+                <div className="m-section">
+                  <button className="m-alerts-btn" onClick={() => setShowAlerts(!showAlerts)}>
+                    <span>⚠️ {criticalCount} Critical Alert{criticalCount > 1 ? 's' : ''}</span>
+                    <span>{showAlerts ? '▼' : '▶'}</span>
+                  </button>
+                  {showAlerts && (
+                    <div className="m-alerts-list">
+                      {data.volcanoes?.filter(v => v.alertLevel === 'Red').map((v, i) => (
+                        <div key={`v${i}`} className="m-alert-item volcano">🌋 {v.name} - {v.country}</div>
+                      ))}
+                      {data.cyclones?.filter(c => c.windSpeed > 119).map((c, i) => (
+                        <div key={`c${i}`} className="m-alert-item cyclone">🌀 {c.name} {c.windSpeed ? `${c.windSpeed}km/h` : ''}</div>
+                      ))}
+                      {data.earthquakes?.filter(e => e.magnitude >= 6).slice(0, 3).map((eq, i) => (
+                        <div key={`e${i}`} className="m-alert-item earthquake">🌍 M{eq.magnitude?.toFixed(1)} - {eq.place}</div>
+                      ))}
+                      {data.tsunamis?.filter(t => t.severity === 'Warning').map((t, i) => (
+                        <div key={`t${i}`} className="m-alert-item tsunami">🌊 {t.name || t.region}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="m-menu-footer">
+              <span>REALNOW v4.0 — ALL FREE SOURCES</span>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+};
+
+// =====================================================================
 // MAIN APP COMPONENT v4.0
 // =====================================================================
 function App() {
   const { rawData, connected, loading } = useRealtimeData();
+  const isMobile = useIsMobile();
   const [timeFilter, setTimeFilter] = useState(0);
   const [enabledLayers, setEnabledLayers] = useState(
     Object.keys(DISASTER_CONFIG).reduce((acc, key) => ({ ...acc, [key]: DISASTER_CONFIG[key].enabled }), {})
@@ -1534,55 +1822,75 @@ function App() {
         )}
       </MapContainer>
       
-      {/* v4: Location Search */}
-      <LocationSearch onSelect={handleSearchSelect} onWatchArea={handleWatchArea} />
+      {isMobile ? (
+        <>
+          {/* ===== MOBILE LAYOUT ===== */}
+          <MobileMenu
+            data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers}
+            connected={connected} timeFilter={timeFilter} setTimeFilter={setTimeFilter}
+            heatmapEnabled={heatmapEnabled} setHeatmapEnabled={setHeatmapEnabled}
+            alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}
+            watchArea={watchArea} setWatchArea={setWatchArea}
+            onSearchSelect={handleSearchSelect} onWatchArea={handleWatchArea}
+          />
+          
+          {/* Live Feed (minimized pill at bottom-right) */}
+          <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
+        </>
+      ) : (
+        <>
+          {/* ===== DESKTOP LAYOUT ===== */}
+          {/* v4: Location Search */}
+          <LocationSearch onSelect={handleSearchSelect} onWatchArea={handleWatchArea} />
+          
+          {/* Stats Dashboard */}
+          <StatsDashboard data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers} connected={connected} />
+          
+          {/* v4: Region stats for watch area */}
+          {watchArea && <RegionStats data={data} watchArea={watchArea} />}
+          
+          {/* Time Control */}
+          <TimeControl timeFilter={timeFilter} setTimeFilter={setTimeFilter} connected={connected} />
+          
+          {/* v4: Timeline Scrubber */}
+          <TimelineScrubber data={data} onTimeChange={handleTimelineChange} />
+          
+          {/* v4: Controls bar (heatmap toggle, alerts toggle, clear watch) */}
+          <div className="v4-controls">
+            <button
+              className={`v4-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
+              onClick={() => setHeatmapEnabled(!heatmapEnabled)}
+              title="Toggle heatmap"
+            >
+              🔥 Heatmap
+            </button>
+            <button
+              className={`v4-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
+              onClick={() => {
+                const newVal = !alertsEnabled;
+                setAlertsEnabled(newVal);
+                localStorage.setItem('realnow_alerts', String(newVal));
+                if (newVal && 'Notification' in window && Notification.permission === 'default') {
+                  Notification.requestPermission();
+                }
+              }}
+              title="Toggle alerts"
+            >
+              🔔 Alerts
+            </button>
+            {watchArea && (
+              <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title="Clear watch area">
+                ❌ Clear Watch
+              </button>
+            )}
+          </div>
+          
+          {/* Live Feed */}
+          <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
+        </>
+      )}
       
-      {/* Stats Dashboard */}
-      <StatsDashboard data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers} connected={connected} />
-      
-      {/* v4: Region stats for watch area */}
-      {watchArea && <RegionStats data={data} watchArea={watchArea} />}
-      
-      {/* Time Control */}
-      <TimeControl timeFilter={timeFilter} setTimeFilter={setTimeFilter} connected={connected} />
-      
-      {/* v4: Timeline Scrubber */}
-      <TimelineScrubber data={data} onTimeChange={handleTimelineChange} />
-      
-      {/* v4: Controls bar (heatmap toggle, alerts toggle, clear watch) */}
-      <div className="v4-controls">
-        <button
-          className={`v4-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
-          onClick={() => setHeatmapEnabled(!heatmapEnabled)}
-          title="Toggle heatmap"
-        >
-          🔥 Heatmap
-        </button>
-        <button
-          className={`v4-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
-          onClick={() => {
-            const newVal = !alertsEnabled;
-            setAlertsEnabled(newVal);
-            localStorage.setItem('realnow_alerts', String(newVal));
-            if (newVal && 'Notification' in window && Notification.permission === 'default') {
-              Notification.requestPermission();
-            }
-          }}
-          title="Toggle alerts"
-        >
-          🔔 Alerts
-        </button>
-        {watchArea && (
-          <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title="Clear watch area">
-            ❌ Clear Watch
-          </button>
-        )}
-      </div>
-      
-      {/* Live Feed */}
-      <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
-      
-      {/* v4: Detail Drawer */}
+      {/* v4: Detail Drawer (both mobile + desktop) */}
       <DetailDrawer item={drawerItem} type={drawerType} onClose={() => { setDrawerItem(null); setDrawerType(null); }} onShare={handleShare} />
       
       {/* v4: Share toast */}
