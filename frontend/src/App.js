@@ -1882,8 +1882,7 @@ function App() {
           <AnalyticsDashboard
             data={data}
             isOpen={true}
-            enabledLayers={enabledLayers}
-            disasterConfig={DISASTER_CONFIG}
+            connected={connected}
             onClose={() => setShowAnalytics(false)}
           />
         )}
@@ -1894,14 +1893,14 @@ function App() {
         {showPreferences && (
           <PreferencesPanel
             isOpen={true}
-            mapStyle={mapStyle} setMapStyle={setMapStyle}
-            language={language} setLanguage={setLanguage}
-            alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}
-            soundEnabled={soundEnabled} setSoundEnabled={setSoundEnabled}
-            watchArea={watchArea} setWatchArea={setWatchArea}
-            digestEmail={digestEmail} setDigestEmail={setDigestEmail}
-            digestFrequency={digestFrequency} setDigestFrequency={setDigestFrequency}
             onClose={() => setShowPreferences(false)}
+            mapStyle={mapStyle} onMapStyleChange={setMapStyle}
+            language={language} onLanguageChange={setLanguage}
+            alertsEnabled={alertsEnabled} onAlertsToggle={setAlertsEnabled}
+            soundEnabled={soundEnabled} onSoundToggle={setSoundEnabled}
+            watchArea={watchArea} onClearWatchArea={() => setWatchArea(null)}
+            digestEmail={digestEmail} onDigestEmailChange={setDigestEmail}
+            digestFrequency={digestFrequency} onDigestFrequencyChange={setDigestFrequency}
           />
         )}
         
