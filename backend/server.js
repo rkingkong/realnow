@@ -859,48 +859,135 @@ class DisasterDataAggregator {
   }
 
   transformGDACSDroughts(data) {
-    console.log('🏜️ Processing GDACS droughts...');
-    
-    if (!data?.features) {
-      console.log('No GDACS drought data received');
-      return null;
+      console.log('🏜️ Processing GDACS droughts...');
+      
+      if (!data?.features) {
+        console.log('No GDACS drought data received');
+        return null;
+      }
+
+      const now = new Date();
+      const currentYear = now.getFullYear();
+
+      const droughts = data.features
+        .filter(f => f.properties && f.geometry?.coordinates)
+        .map(f => {
+          const props = f.properties;
+          const coords = f.geometry.coordinates;
+          
+          // Use computeEventStatus just like floods and wildfires do
+          const eventStatus = this.computeEventStatus(props);
+          
+          return {
+            id: `gdacs_dr_${props.eventid || Math.random()}`,
+            type: 'drought',
+            name: props.eventname || props.name || 'Drought',
+            coordinates: coords,
+            latitude: coords[1],
+            longitude: coords[0],
+            alertLevel: props.alertlevel || 'Green',
+            alertScore: parseInt(props.alertscore || 0),
+            affectedArea: parseInt(props.affectedarea || 0),
+            severity: props.severitydata?.severity || props.severity || 'Unknown',
+            country: props.country || props.countryname || '',
+            population: parseInt(props.population || 0),
+            fromDate: props.fromdate,
+            toDate: props.todate,
+            duration: parseInt(props.duration || 0),
+            source: 'GDACS',
+            description: props.description || props.eventname || '',
+            url: props.url || '',
+            isActive: eventStatus.isActive,
+            status: eventStatus.status,
+            freshness: eventStatus.freshness,
+            daysSinceStart: eventStatus.daysSinceStart,
+            daysSinceEnd: eventStatus.daysSinceEnd,
+            lastUpdate: props.lastupdate || props.modified || now.toISOString(),
+            isCurrent: props.iscurrent === 'true' || props.iscurrent === true
+          };
+        })
+        .filter(drought => {
+          // ─────────────────────────────────────────────────────────────
+          // PRIORITY CHECK: Filter out events with old years in name
+          // GDACS keeps updating toDate on old drought cycles, making
+          // them look "fresh" (e.g. "South America-2023" with toDate 2026).
+          // This check MUST come first before any date-based pass-throughs.
+          // ─────────────────────────────────────────────────────────────
+          const nameYearMatch = drought.name.match(/(\d{4})/);
+          if (nameYearMatch) {
+            const eventYear = parseInt(nameYearMatch[1]);
+            // If the year in the name is more than 1 year behind current year, filter it out
+            if (eventYear < currentYear - 1) {
+              console.log(`  ⏭️ Filtering out old drought: "${drought.name}" (year ${eventYear} in name, current year ${currentYear})`);
+              return false;
+            }
+          }
+
+          // ─────────────────────────────────────────────────────────────
+          // SECOND CHECK: Filter by fromDate age
+          // If a drought started more than 2 years ago, it's likely a 
+          // legacy event that GDACS keeps refreshing. Filter it out
+          // unless it's still genuinely flagged as current/active.
+          // ─────────────────────────────────────────────────────────────
+          if (drought.fromDate) {
+            const fromDate = new Date(drought.fromDate);
+            const daysSinceStart = Math.floor((now - fromDate) / (1000 * 60 * 60 * 24));
+            if (daysSinceStart > 730 && !drought.isCurrent) {
+              console.log(`  ⏭️ Filtering out old drought: "${drought.name}" (started ${daysSinceStart} days ago)`);
+              return false;
+            }
+          }
+
+          // ─────────────────────────────────────────────────────────────
+          // STANDARD ACTIVE/ENDED CHECKS (same pattern as floods/wildfires)
+          // ─────────────────────────────────────────────────────────────
+          
+          // Always show active droughts
+          if (drought.isActive) return true;
+          
+          // Show just-ended droughts
+          if (drought.status === 'just_ended') return true;
+          
+          // Show recently ended droughts (within 30 days)
+          if (drought.daysSinceEnd !== null && drought.daysSinceEnd <= 30) return true;
+          
+          // Filter out droughts that ended more than 30 days ago
+          if (drought.daysSinceEnd !== null && drought.daysSinceEnd > 30) {
+            console.log(`  ⏭️ Filtering out ended drought: "${drought.name}" (ended ${drought.daysSinceEnd} days ago)`);
+            return false;
+          }
+          
+          // Filter out droughts that have been going for a very long time with stale data
+          if (drought.daysSinceStart !== null && drought.daysSinceStart > 365 && drought.freshness === 'stale') {
+            console.log(`  ⏭️ Filtering out stale drought: "${drought.name}" (started ${drought.daysSinceStart} days ago, stale)`);
+            return false;
+          }
+          
+          return true;
+        })
+        // Sort: active first, then by alert level severity
+        .sort((a, b) => {
+          if (a.isActive && !b.isActive) return -1;
+          if (!a.isActive && b.isActive) return 1;
+          const alertOrder = { 'Red': 3, 'Orange': 2, 'Yellow': 1, 'Green': 0 };
+          const diff = (alertOrder[b.alertLevel] || 0) - (alertOrder[a.alertLevel] || 0);
+          if (diff !== 0) return diff;
+          return new Date(b.fromDate || 0) - new Date(a.fromDate || 0);
+        });
+
+      const activeCount = droughts.filter(d => d.isActive).length;
+      const endedCount = droughts.filter(d => !d.isActive).length;
+      
+      console.log(`✅ Processed ${droughts.length} droughts (${activeCount} active, ${endedCount} recently ended)`);
+      
+      return {
+        type: 'droughts',
+        timestamp: new Date().toISOString(),
+        count: droughts.length,
+        activeCount,
+        features: droughts
+      };
     }
-
-    const droughts = data.features
-      .filter(f => f.properties && f.geometry?.coordinates)
-      .map(f => {
-        const props = f.properties;
-        const coords = f.geometry.coordinates;
-        
-        return {
-          id: `gdacs_dr_${props.eventid || Math.random()}`,
-          type: 'drought',
-          name: props.eventname || props.name || 'Drought',
-          coordinates: coords,
-          latitude: coords[1],
-          longitude: coords[0],
-          alertLevel: props.alertlevel || 'Green',
-          alertScore: parseInt(props.alertscore || 0),
-          affectedArea: parseInt(props.affectedarea || 0),
-          severity: props.severitydata?.severity || props.severity || 'Unknown',
-          country: props.country || '',
-          population: parseInt(props.population || 0),
-          fromDate: props.fromdate,
-          toDate: props.todate,
-          duration: parseInt(props.duration || 0),
-          source: 'GDACS'
-        };
-      });
-
-    console.log(`✅ Processed ${droughts.length} droughts from GDACS`);
-    
-    return {
-      type: 'droughts',
-      timestamp: new Date().toISOString(),
-      count: droughts.length,
-      features: droughts
-    };
-  }
 
   transformSpaceWeather(data) {
     if (!Array.isArray(data) || data.length < 2) {

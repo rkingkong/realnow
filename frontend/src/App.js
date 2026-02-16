@@ -689,7 +689,24 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
             {item.category && <div className="drawer-row"><span>Category</span><strong>{item.category}</strong></div>}
           </div>
         )}
-        
+        {type === 'droughts' && (
+          <div className="drawer-section">
+            <div className={`drawer-status-badge ${item.isActive !== false ? 'active' : 'contained'}`}>
+              {item.isActive !== false ? '🏜️ ACTIVE DROUGHT' : item.status === 'just_ended' ? '🟡 RECENTLY ENDED' : '✅ ENDED'}
+            </div>
+            {item.alertLevel && <div className="drawer-row"><span>Alert Level</span><strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong></div>}
+            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+            {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{item.affectedArea.toLocaleString()} km²</strong></div>}
+            {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{item.population.toLocaleString()}</strong></div>}
+            {item.duration > 0 && <div className="drawer-row"><span>Duration</span><strong>{item.duration} days</strong></div>}
+            {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+            {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+            {item.daysSinceStart !== null && item.isActive !== false && (
+              <div className="drawer-row"><span>Active For</span><strong>{item.daysSinceStart} days</strong></div>
+            )}
+          </div>
+        )}
+
         {type === 'volcanoes' && (
           <div className="drawer-section">
             {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
