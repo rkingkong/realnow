@@ -13,7 +13,7 @@
 // Uses inline SVG charts (no external charting library needed).
 // ============================================================================
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 // ── Mini SVG Chart Components ──────────────────────────────────────────────
 

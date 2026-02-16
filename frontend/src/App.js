@@ -20,7 +20,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Polygon, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import io from 'socket.io-client';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
@@ -34,7 +34,7 @@ import ClusterLayer from './components/ClusterLayer';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import PreferencesPanel from './components/PreferencesPanel';
 import { useSmartAlerts } from './components/SmartAlerts';
-import { I18nProvider, useTranslation } from './i18n/i18n';
+import { I18nProvider } from './i18n/i18n';
 
 // =====================================================================
 // DISASTER CONFIGURATION
@@ -246,7 +246,7 @@ const formatFloodInfo = (flood) => {
   const daysActive = fromDate ? Math.floor((now - fromDate) / (1000 * 60 * 60 * 24)) : 0;
   const isActive = flood.isActive !== undefined ? flood.isActive :
     (flood.status === 'active' || flood.status === 'ongoing' ||
-     (!toDate || toDate > now) && daysActive < 14);
+     ((!toDate || toDate > now) && daysActive < 14));
   const statusLabel = isActive
     ? `Active - Day ${daysActive}` : flood.status === 'just_ended'
     ? 'Recently ended' : 'Ended';
@@ -504,7 +504,7 @@ const LocationSearch = ({ onSelect, onWatchArea }) => {
       {isOpen && (
         <div className="search-results" role="listbox">
           {results.map((r, i) => (
-            <div key={i} className="search-result-item" role="option" onClick={() => handleSelect(r)}>
+            <div key={i} className="search-result-item" role="option" aria-selected={false} onClick={() => handleSelect(r)}>
               <span className="result-icon">📍</span>
               <span className="result-text">{r.display_name}</span>
             </div>
@@ -1164,7 +1164,7 @@ const FEED_ICONS = {
 
 const MAX_FEED_ITEMS = 80;
 
-const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
+const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytics, onShowPreferences }) => {
   const [feedItems, setFeedItems] = useState([]);
   const [isMinimized, setIsMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -1241,6 +1241,12 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
           <span className="livefeed-count">{feedItems.length}</span>
         </div>
         <div className="livefeed-header-right">
+          {onShowAnalytics && (
+            <button className="livefeed-btn livefeed-tab-btn" onClick={onShowAnalytics} title="Analytics">📊</button>
+          )}
+          {onShowPreferences && (
+            <button className="livefeed-btn livefeed-tab-btn" onClick={onShowPreferences} title="Settings">⚙️</button>
+          )}
           {!isAutoScroll && (
             <button className="livefeed-btn livefeed-btn-top" onClick={() => { if (listRef.current) listRef.current.scrollTop = 0; setIsAutoScroll(true); }}>↑ New</button>
           )}
@@ -1336,7 +1342,8 @@ const MobileMenu = ({
   heatmapEnabled, setHeatmapEnabled,
   alertsEnabled, setAlertsEnabled,
   watchArea, setWatchArea,
-  onSearchSelect, onWatchArea
+  onSearchSelect, onWatchArea,
+  onShowAnalytics, onShowPreferences
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -1514,6 +1521,10 @@ const MobileMenu = ({
                       if (newVal && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
                     }}>🔔 Alerts</button>
                   {watchArea && <button className="m-ctrl-btn" onClick={() => setWatchArea(null)}>❌ Clear Watch</button>}
+                </div>
+                <div className="m-controls-row" style={{marginTop: '6px'}}>
+                  <button className="m-ctrl-btn" onClick={() => { setIsOpen(false); onShowAnalytics && onShowAnalytics(); }}>📊 Analytics</button>
+                  <button className="m-ctrl-btn" onClick={() => { setIsOpen(false); onShowPreferences && onShowPreferences(); }}>⚙️ Settings</button>
                 </div>
               </div>
 
@@ -1815,43 +1826,7 @@ function App() {
           )}
         </MapContainer>
         
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/* v5: TOP-RIGHT BUTTONS (Analytics + Preferences) */}
-        {/* ═══════════════════════════════════════════════════════════ */}
-        <div className="v5-topbar-buttons" style={{
-          position: 'fixed', top: isMobile ? '60px' : '12px',
-          right: isMobile ? '8px' : '16px', zIndex: 1100,
-          display: 'flex', gap: '8px'
-        }}>
-          <button
-            className="v5-topbar-btn"
-            onClick={() => setShowAnalytics(!showAnalytics)}
-            aria-label="Open analytics dashboard"
-            style={{
-              background: showAnalytics ? 'rgba(0,200,255,0.3)' : 'rgba(20,20,30,0.85)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: '#fff', padding: '8px 14px', borderRadius: '8px',
-              fontSize: '13px', cursor: 'pointer', backdropFilter: 'blur(10px)',
-              display: 'flex', alignItems: 'center', gap: '6px'
-            }}
-          >
-            📊 Analytics
-          </button>
-          <button
-            className="v5-topbar-btn"
-            onClick={() => setShowPreferences(!showPreferences)}
-            aria-label="Open preferences"
-            style={{
-              background: showPreferences ? 'rgba(0,255,136,0.3)' : 'rgba(20,20,30,0.85)',
-              border: '1px solid rgba(255,255,255,0.15)',
-              color: '#fff', padding: '8px 14px', borderRadius: '8px',
-              fontSize: '13px', cursor: 'pointer', backdropFilter: 'blur(10px)',
-              display: 'flex', alignItems: 'center', gap: '6px'
-            }}
-          >
-            ⚙️ Settings
-          </button>
-        </div>
+        {/* v5: Analytics/Settings now integrated into LiveFeed header tabs */}
 
         {isMobile ? (
           <>
@@ -1862,8 +1837,11 @@ function App() {
               alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}
               watchArea={watchArea} setWatchArea={setWatchArea}
               onSearchSelect={handleSearchSelect} onWatchArea={handleWatchArea}
+              onShowAnalytics={() => setShowAnalytics(true)}
+              onShowPreferences={() => setShowPreferences(true)}
             />
-            <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
+            <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId}
+              onShowAnalytics={() => setShowAnalytics(true)} onShowPreferences={() => setShowPreferences(true)} />
           </>
         ) : (
           <>
@@ -1889,7 +1867,8 @@ function App() {
               )}
             </div>
             
-            <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
+            <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId}
+              onShowAnalytics={() => setShowAnalytics(true)} onShowPreferences={() => setShowPreferences(true)} />
           </>
         )}
         
@@ -1902,6 +1881,7 @@ function App() {
         {showAnalytics && (
           <AnalyticsDashboard
             data={data}
+            isOpen={true}
             enabledLayers={enabledLayers}
             disasterConfig={DISASTER_CONFIG}
             onClose={() => setShowAnalytics(false)}
@@ -1913,6 +1893,7 @@ function App() {
         {/* ═══════════════════════════════════════════════════════════ */}
         {showPreferences && (
           <PreferencesPanel
+            isOpen={true}
             mapStyle={mapStyle} setMapStyle={setMapStyle}
             language={language} setLanguage={setLanguage}
             alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}

@@ -77,7 +77,6 @@ const PreferencesPanel = ({
   onDigestFrequencyChange,
 }) => {
   const [localEmail, setLocalEmail] = useState(digestEmail || '');
-  const [syncing, setSyncing] = useState(false);
 
   // Sync preferences to backend
   const syncToBackend = useCallback(async (updates) => {

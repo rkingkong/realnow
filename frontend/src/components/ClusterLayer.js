@@ -19,7 +19,7 @@
 // ============================================================================
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+import { CircleMarker, Tooltip, useMap } from 'react-leaflet';
 
 // ── Simple Grid-Based Clustering ────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ import { CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
  */
 function clusterByGrid(items, zoom, getCoords, options = {}) {
   const {
-    minZoomForClusters = 2,
+    minZoomForClusters: _minZoom = 2,  // eslint-disable-line no-unused-vars
     maxZoomForClusters = 10,  // Above this zoom, show individual markers
     gridSizeDeg = null        // Override grid size in degrees
   } = options;
@@ -71,7 +71,7 @@ function clusterByGrid(items, zoom, getCoords, options = {}) {
   });
 
   const results = [];
-  for (const [key, cell] of grid) {
+  for (const [, cell] of grid) {
     const count = cell.items.length;
     const avgLat = cell.sumLat / count;
     const avgLon = cell.sumLon / count;

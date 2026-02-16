@@ -216,6 +216,21 @@
   50% { transform: translateY(-2px); }
 }
 
+/* v5: Tab buttons for Analytics/Settings in LiveFeed header */
+.livefeed-tab-btn {
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.15s ease;
+}
+.livefeed-tab-btn:hover {
+  background: rgba(0, 200, 255, 0.12);
+  border-color: rgba(0, 200, 255, 0.25);
+  transform: scale(1.05);
+}
+
 
 /* ---- FEED LIST ---- */
 .livefeed-list {
