@@ -1,20 +1,14 @@
 // ============================================================================
-// MapEnhancements.js — Satellite Toggle, Polygon Overlays, Wind Field
+// MapEnhancements.js — v5.0.1 FIXED
 // Drop into: /var/www/realnow/frontend/src/components/MapEnhancements.js
 // ============================================================================
 //
-// Components:
-// 1. MapStyleSwitcher — Toggle between dark, satellite, terrain base maps
-// 2. DisasterPolygons — Flood extent and cyclone track polygons
-// 3. CycloneTrackLine — Animated cyclone path visualization
-//
-// Usage in App.js:
-//   import { MapStyleSwitcher, DisasterPolygons, CycloneTrackLine } from './components/MapEnhancements';
-//   
-//   Inside <MapContainer>:
-//     <MapStyleSwitcher style={mapStyle} />
-//     <DisasterPolygons data={data} enabledLayers={enabledLayers} />
-//     <CycloneTrackLine cyclones={data.cyclones} enabled={enabledLayers.cyclones} />
+// FIXES:
+//   1. MapStyleSwitcher now accepts BOTH 'style' and 'mapStyle' props
+//      (App.js passes 'mapStyle' but old component only read 'style')
+//   2. CycloneTrackLine now handles BOTH single cyclone and array of cyclones
+//      (App.js maps over cyclones and passes single 'cyclone' prop)
+//   3. Added 'mapStyle' as primary prop name for consistency with App.js
 // ============================================================================
 
 import React, { useMemo } from 'react';
@@ -51,15 +45,20 @@ const MAP_STYLES = {
 
 /**
  * MapStyleSwitcher — Renders the TileLayer based on the selected style.
- * Also provides a small toggle button overlay.
+ * 
+ * FIX: Now accepts BOTH 'mapStyle' (from App.js) and 'style' (legacy) props.
+ * App.js passes: <MapStyleSwitcher mapStyle={mapStyle} onStyleChange={setMapStyle} />
+ * Old component only read 'style', so mapStyle was ignored and always defaulted to 'dark'.
  */
-export const MapStyleSwitcher = ({ style = 'dark', onStyleChange }) => {
-  const tileConfig = MAP_STYLES[style] || MAP_STYLES.dark;
+export const MapStyleSwitcher = ({ mapStyle, style, onStyleChange }) => {
+  // FIX: Accept mapStyle (primary, from App.js) OR style (legacy fallback)
+  const activeStyle = mapStyle || style || 'dark';
+  const tileConfig = MAP_STYLES[activeStyle] || MAP_STYLES.dark;
 
   return (
     <>
       <TileLayer
-        key={style}
+        key={activeStyle}
         url={tileConfig.url}
         attribution={tileConfig.attribution}
         maxZoom={tileConfig.maxZoom}
@@ -69,11 +68,11 @@ export const MapStyleSwitcher = ({ style = 'dark', onStyleChange }) => {
           {Object.entries(MAP_STYLES).map(([key, cfg]) => (
             <button
               key={key}
-              className={`map-style-btn ${style === key ? 'active' : ''}`}
+              className={`map-style-btn ${activeStyle === key ? 'active' : ''}`}
               onClick={() => onStyleChange(key)}
               title={cfg.label}
               role="radio"
-              aria-checked={style === key}
+              aria-checked={activeStyle === key}
               aria-label={cfg.label}
             >
               {cfg.label.split(' ')[0]}
@@ -87,15 +86,11 @@ export const MapStyleSwitcher = ({ style = 'dark', onStyleChange }) => {
 
 // ── Disaster Area Polygons ─────────────────────────────────────────────────
 
-/**
- * Generate a rough circle polygon for disaster-affected areas.
- * Used when we have a center point + affected area (in km²).
- */
 function generateImpactCircle(lat, lon, areaKm2, points = 24) {
   if (!areaKm2 || areaKm2 <= 0) return null;
   
   const radiusKm = Math.sqrt(areaKm2 / Math.PI);
-  const radiusDeg = radiusKm / 111; // rough conversion
+  const radiusDeg = radiusKm / 111;
   
   const polygon = [];
   for (let i = 0; i < points; i++) {
@@ -104,7 +99,7 @@ function generateImpactCircle(lat, lon, areaKm2, points = 24) {
     const pLon = lon + (radiusDeg * Math.cos(angle)) / Math.cos(lat * Math.PI / 180);
     polygon.push([pLat, pLon]);
   }
-  polygon.push(polygon[0]); // Close the polygon
+  polygon.push(polygon[0]);
   return polygon;
 }
 
@@ -131,7 +126,7 @@ export const DisasterPolygons = ({ data, enabledLayers }) => {
         const coords = getItemCoords(item);
         if (!coords) return;
         const area = item.affectedArea || item.area;
-        if (!area || area < 10) return; // Skip tiny areas
+        if (!area || area < 10) return;
         
         const poly = generateImpactCircle(coords.lat, coords.lon, area);
         if (poly) {
@@ -175,12 +170,12 @@ export const DisasterPolygons = ({ data, enabledLayers }) => {
       });
     }
 
-    // Drought affected areas (these tend to be very large)
+    // Drought affected areas
     if (enabledLayers?.droughts && data.droughts?.length) {
       data.droughts.forEach((item, i) => {
         const coords = getItemCoords(item);
         if (!coords) return;
-        const area = item.affectedArea || item.area || 5000; // Droughts default large
+        const area = item.affectedArea || item.area || 5000;
         
         const poly = generateImpactCircle(coords.lat, coords.lon, area, 20);
         if (poly) {
@@ -232,24 +227,34 @@ export const DisasterPolygons = ({ data, enabledLayers }) => {
 
 /**
  * CycloneTrackLine — Renders historical track + forecast cone for cyclones.
- * Uses track data if available, or just shows a circle otherwise.
+ *
+ * FIX: Now handles THREE calling conventions:
+ *   1. <CycloneTrackLine cyclone={singleCyclone} />         (App.js v5 usage in .map())
+ *   2. <CycloneTrackLine cyclones={array} enabled={bool} /> (original component API)
+ *   3. Both props at once (graceful handling)
  */
-export const CycloneTrackLine = ({ cyclones, enabled }) => {
-  if (!enabled || !cyclones?.length) return null;
+export const CycloneTrackLine = ({ cyclone, cyclones, enabled = true }) => {
+  // FIX: Build a unified list from either prop
+  const cycloneList = useMemo(() => {
+    if (cyclone) return [cyclone]; // Single cyclone from App.js .map()
+    if (cyclones && Array.isArray(cyclones)) return cyclones;
+    return [];
+  }, [cyclone, cyclones]);
+
+  if (!enabled || !cycloneList.length) return null;
 
   return (
     <>
-      {cyclones.map((cyclone, i) => {
-        const coords = getItemCoords(cyclone);
+      {cycloneList.map((c, i) => {
+        const coords = getItemCoords(c);
         if (!coords) return null;
 
         // If track data is available, draw it
-        if (cyclone.track && Array.isArray(cyclone.track) && cyclone.track.length > 1) {
-          const trackPositions = cyclone.track.map(p => [p.lat, p.lon]);
+        if (c.track && Array.isArray(c.track) && c.track.length > 1) {
+          const trackPositions = c.track.map(p => [p.lat, p.lon]);
           
           return (
-            <React.Fragment key={`cyclone_track_${cyclone.id || i}`}>
-              {/* Track line */}
+            <React.Fragment key={`cyclone_track_${c.id || i}`}>
               <Polyline
                 positions={trackPositions}
                 pathOptions={{
@@ -259,8 +264,7 @@ export const CycloneTrackLine = ({ cyclones, enabled }) => {
                   dashArray: '8 4'
                 }}
               />
-              {/* Track points */}
-              {cyclone.track.map((point, j) => (
+              {c.track.map((point, j) => (
                 <CircleMarker
                   key={`tp_${i}_${j}`}
                   center={[point.lat, point.lon]}
@@ -276,28 +280,28 @@ export const CycloneTrackLine = ({ cyclones, enabled }) => {
         }
 
         // No track data — show wind radius as a circle
-        const windKm = cyclone.windSpeed ? cyclone.windSpeed * 1.5 : 200;
+        const windKm = c.windSpeed ? c.windSpeed * 1.5 : 200;
         const windCircle = generateImpactCircle(coords.lat, coords.lon, Math.PI * (windKm / 111) ** 2 * 111 * 111, 32);
         
         if (!windCircle) return null;
 
         return (
           <Polygon
-            key={`cyclone_wind_${cyclone.id || i}`}
+            key={`cyclone_wind_${c.id || i}`}
             positions={windCircle}
             pathOptions={{
               color: '#00ccff',
               fillColor: '#00ccff',
-              fillOpacity: cyclone.isActive ? 0.12 : 0.05,
-              weight: cyclone.isActive ? 2 : 1,
+              fillOpacity: c.isActive ? 0.12 : 0.05,
+              weight: c.isActive ? 2 : 1,
               dashArray: '6 4'
             }}
           >
             <Tooltip direction="center" opacity={0.8}>
               <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
-                {cyclone.stormType}: {cyclone.name}<br />
+                {c.stormType}: {c.name}<br />
                 <span style={{ color: '#00ccff' }}>
-                  Wind: {cyclone.windSpeed || '?'} km/h
+                  Wind: {c.windSpeed || '?'} km/h
                 </span>
               </span>
             </Tooltip>

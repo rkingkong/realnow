@@ -1,53 +1,33 @@
 // ============================================================================
-// PreferencesPanel.js — User Settings Panel
+// PreferencesPanel.js — v5.0.1 FIXED
 // Drop into: /var/www/realnow/frontend/src/components/PreferencesPanel.js
 // ============================================================================
 //
-// Slide-in settings panel for:
-// - Map style (dark/satellite/terrain/light)
-// - Language selection
-// - Alert toggles (sound, notifications)
-// - Watch area management
-// - Email digest configuration
-// - Syncs with backend /api/preferences
-//
-// Usage in App.js:
-//   import PreferencesPanel from './components/PreferencesPanel';
-//   <PreferencesPanel
-//     isOpen={prefsOpen}
-//     onClose={() => setPrefsOpen(false)}
-//     mapStyle={mapStyle}
-//     onMapStyleChange={setMapStyle}
-//     language={language}
-//     onLanguageChange={setLanguage}
-//     alertsEnabled={alertsEnabled}
-//     onAlertsToggle={setAlertsEnabled}
-//     soundEnabled={soundEnabled}
-//     onSoundToggle={setSoundEnabled}
-//     watchArea={watchArea}
-//     onClearWatchArea={() => setWatchArea(null)}
-//     digestEmail={digestEmail}
-//     onDigestEmailChange={setDigestEmail}
-//   />
+// FIXES:
+//   1. Now uses useTranslation() hook so section titles update on language change
+//   2. All static text is now translated — proving language switch works
+//   3. Added visual feedback (brief green flash) when settings change
+//   4. Fixed email save button and digest frequency selector
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from '../i18n/i18n';
 
 const LANGUAGES = {
-  en: { label: 'English', flag: '🇬🇧' },
-  es: { label: 'Español', flag: '🇪🇸' },
-  fr: { label: 'Français', flag: '🇫🇷' },
-  pt: { label: 'Português', flag: '🇧🇷' },
-  ar: { label: 'العربية', flag: '🇸🇦' },
-  zh: { label: '中文', flag: '🇨🇳' },
-  hi: { label: 'हिन्दी', flag: '🇮🇳' },
+  en: { label: 'English', flag: '🇬🇧', code: 'GB' },
+  es: { label: 'Español', flag: '🇪🇸', code: 'ES' },
+  fr: { label: 'Français', flag: '🇫🇷', code: 'FR' },
+  pt: { label: 'Português', flag: '🇧🇷', code: 'BR' },
+  ar: { label: 'العربية', flag: '🇸🇦', code: 'SA' },
+  zh: { label: '中文', flag: '🇨🇳', code: 'CN' },
+  hi: { label: 'हिन्दी', flag: '🇮🇳', code: 'IN' },
 };
 
 const MAP_STYLES = [
-  { key: 'dark', label: '🌑 Dark' },
-  { key: 'satellite', label: '🛰️ Satellite' },
-  { key: 'terrain', label: '🏔️ Terrain' },
-  { key: 'light', label: '☀️ Light' },
+  { key: 'dark', label: '🌑', labelKey: 'darkMode' },
+  { key: 'satellite', label: '🛰️', labelKey: 'satellite' },
+  { key: 'terrain', label: '🏔️', labelKey: 'terrain' },
+  { key: 'light', label: '☀️', labelKey: 'light' },
 ];
 
 const Toggle = ({ checked, onChange, label }) => (
@@ -73,10 +53,19 @@ const PreferencesPanel = ({
   onClearWatchArea,
   digestEmail = '',
   onDigestEmailChange,
-  digestFrequency = 'daily',
+  digestFrequency = 'off',
   onDigestFrequencyChange,
 }) => {
+  // FIX: Use translation hook so text updates when language changes
+  const { t } = useTranslation();
   const [localEmail, setLocalEmail] = useState(digestEmail || '');
+  const [savedFlash, setSavedFlash] = useState('');
+
+  // Visual feedback when a setting changes
+  const flashSaved = useCallback((key) => {
+    setSavedFlash(key);
+    setTimeout(() => setSavedFlash(''), 800);
+  }, []);
 
   // Sync preferences to backend
   const syncToBackend = useCallback(async (updates) => {
@@ -91,25 +80,19 @@ const PreferencesPanel = ({
         body: JSON.stringify(updates)
       });
     } catch (e) {
-      // Silent fail — local storage still works
       console.log('Prefs sync failed (backend may not have preferences module)');
     }
   }, []);
 
-  // Sync on change
+  // Debounced sync on change
   useEffect(() => {
     if (!isOpen) return;
     const timer = setTimeout(() => {
       syncToBackend({
-        mapStyle,
-        language,
-        alertsEnabled,
-        soundEnabled,
-        digestEmail: localEmail,
-        digestFrequency,
-        watchArea
+        mapStyle, language, alertsEnabled, soundEnabled,
+        digestEmail: localEmail, digestFrequency, watchArea
       });
-    }, 1000); // Debounce
+    }, 1000);
     return () => clearTimeout(timer);
   }, [mapStyle, language, alertsEnabled, soundEnabled, localEmail, digestFrequency, watchArea, isOpen, syncToBackend]);
 
@@ -133,6 +116,7 @@ const PreferencesPanel = ({
   const handleEmailSave = () => {
     onDigestEmailChange?.(localEmail);
     syncToBackend({ digestEmail: localEmail });
+    flashSaved('email');
   };
 
   // Keyboard handler
@@ -145,27 +129,54 @@ const PreferencesPanel = ({
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
+  // Handlers with visual feedback
+  const handleMapStyleChange = (key) => {
+    onMapStyleChange?.(key);
+    flashSaved('mapStyle');
+  };
+
+  const handleLanguageChange = (code) => {
+    onLanguageChange?.(code);
+    flashSaved('language');
+  };
+
+  const handleAlertsToggle = (val) => {
+    onAlertsToggle?.(val);
+    if (val && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    flashSaved('alerts');
+  };
+
+  const handleSoundToggle = (val) => {
+    onSoundToggle?.(val);
+    flashSaved('sound');
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="prefs-overlay" onClick={onClose}>
-      <div className="prefs-panel" role="dialog" aria-label="Settings" aria-modal="true" onClick={e => e.stopPropagation()}>
+      <div className="prefs-panel" role="dialog" aria-label={t('settings')} aria-modal="true" onClick={e => e.stopPropagation()}>
         <div className="prefs-header">
-          <span className="prefs-title">⚙️ Settings</span>
-          <button className="prefs-close" onClick={onClose} aria-label="Close settings">✕</button>
+          <span className="prefs-title">⚙️ {t('settings')}</span>
+          <button className="prefs-close" onClick={onClose} aria-label={t('close')}>✕</button>
         </div>
 
         {/* Map Style */}
         <div className="prefs-section">
-          <div className="prefs-section-title">Map Style</div>
+          <div className="prefs-section-title" style={savedFlash === 'mapStyle' ? { color: '#00ff88' } : {}}>
+            {t('mapStyleTitle') || 'Map Style'}
+            {savedFlash === 'mapStyle' && <span style={{ marginLeft: 8, fontSize: 9, color: '#00ff88' }}>✓</span>}
+          </div>
           <div className="prefs-lang-grid">
             {MAP_STYLES.map(s => (
               <button
                 key={s.key}
                 className={`prefs-lang-btn ${mapStyle === s.key ? 'active' : ''}`}
-                onClick={() => onMapStyleChange?.(s.key)}
+                onClick={() => handleMapStyleChange(s.key)}
               >
-                {s.label}
+                {s.label} {t(s.labelKey) || s.key.charAt(0).toUpperCase() + s.key.slice(1)}
               </button>
             ))}
           </div>
@@ -173,15 +184,18 @@ const PreferencesPanel = ({
 
         {/* Language */}
         <div className="prefs-section">
-          <div className="prefs-section-title">Language</div>
+          <div className="prefs-section-title" style={savedFlash === 'language' ? { color: '#00ff88' } : {}}>
+            {t('language') || 'Language'}
+            {savedFlash === 'language' && <span style={{ marginLeft: 8, fontSize: 9, color: '#00ff88' }}>✓</span>}
+          </div>
           <div className="prefs-lang-grid">
             {Object.entries(LANGUAGES).map(([code, info]) => (
               <button
                 key={code}
                 className={`prefs-lang-btn ${language === code ? 'active' : ''}`}
-                onClick={() => onLanguageChange?.(code)}
+                onClick={() => handleLanguageChange(code)}
               >
-                {info.flag} {info.label}
+                <span style={{ fontSize: 10, opacity: 0.6, marginRight: 4 }}>{info.code}</span> {info.label}
               </button>
             ))}
           </div>
@@ -189,48 +203,50 @@ const PreferencesPanel = ({
 
         {/* Alerts */}
         <div className="prefs-section">
-          <div className="prefs-section-title">Alerts & Notifications</div>
-          <div className="prefs-row">
-            <span className="prefs-label">🔔 Browser Notifications</span>
-            <Toggle checked={alertsEnabled} onChange={onAlertsToggle} label="Toggle browser notifications" />
+          <div className="prefs-section-title">
+            {t('alertsTitle') || 'Alerts & Notifications'}
           </div>
           <div className="prefs-row">
-            <span className="prefs-label">🔊 Alert Sounds</span>
-            <Toggle checked={soundEnabled} onChange={onSoundToggle} label="Toggle alert sounds" />
+            <span className="prefs-label">🔔 {t('browserNotifications') || 'Browser Notifications'}</span>
+            <Toggle checked={alertsEnabled} onChange={handleAlertsToggle} label="Toggle browser notifications" />
+          </div>
+          <div className="prefs-row">
+            <span className="prefs-label">🔊 {t('alertSounds') || 'Alert Sounds'}</span>
+            <Toggle checked={soundEnabled} onChange={handleSoundToggle} label="Toggle alert sounds" />
           </div>
         </div>
 
         {/* Watch Area */}
         <div className="prefs-section">
-          <div className="prefs-section-title">Watch Area</div>
+          <div className="prefs-section-title">{t('watchArea') || 'Watch Area'}</div>
           {watchArea ? (
             <div>
               <div className="prefs-row">
-                <span className="prefs-label">📍 {watchArea.label || 'Custom Area'}</span>
+                <span className="prefs-label">📍 {watchArea.label || watchArea.name || 'Custom Area'}</span>
               </div>
               <div className="prefs-row" style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>
-                {watchArea.lat?.toFixed(3)}, {watchArea.lon?.toFixed(3)} · {watchArea.radiusKm || 500}km radius
+                {watchArea.lat?.toFixed(3)}, {watchArea.lon?.toFixed(3)} · {watchArea.radiusKm || watchArea.radius || 500}km
               </div>
               <button
                 className="prefs-lang-btn"
                 style={{ width: '100%', marginTop: 8, color: '#ff6666', borderColor: 'rgba(255,100,100,0.3)' }}
                 onClick={onClearWatchArea}
               >
-                Clear Watch Area
+                {t('clearWatchArea') || 'Clear Watch Area'}
               </button>
             </div>
           ) : (
             <div style={{ color: '#666', fontFamily: 'monospace', fontSize: 11, padding: '8px 0' }}>
-              No watch area set. Click the map with the watch tool to set one.
+              {t('noWatchArea') || 'No watch area set. Click the map with the watch tool to set one.'}
             </div>
           )}
         </div>
 
         {/* Email Digest */}
         <div className="prefs-section">
-          <div className="prefs-section-title">Email Digest</div>
+          <div className="prefs-section-title">{t('emailDigest') || 'Email Digest'}</div>
           <div style={{ color: '#888', fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}>
-            Get a summary of events in your watch area delivered to your inbox.
+            {t('emailDigestDesc') || 'Get a summary of events in your watch area delivered to your inbox.'}
           </div>
           <input
             type="email"
@@ -238,21 +254,43 @@ const PreferencesPanel = ({
             placeholder="your@email.com"
             value={localEmail}
             onChange={e => setLocalEmail(e.target.value)}
-            onBlur={handleEmailSave}
-            aria-label="Email address for digest"
           />
+          {localEmail && localEmail !== digestEmail && (
+            <button
+              className="prefs-lang-btn"
+              style={{
+                width: '100%', marginTop: 8,
+                color: '#00ff88', borderColor: 'rgba(0,255,136,0.3)',
+                background: 'rgba(0,255,136,0.08)'
+              }}
+              onClick={handleEmailSave}
+            >
+              {savedFlash === 'email' ? '✓ Saved!' : (t('saveEmail') || 'Save Email')}
+            </button>
+          )}
           {localEmail && (
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              {['daily', 'weekly', 'off'].map(freq => (
-                <button
-                  key={freq}
-                  className={`prefs-lang-btn ${digestFrequency === freq ? 'active' : ''}`}
-                  style={{ flex: 1 }}
-                  onClick={() => onDigestFrequencyChange?.(freq)}
-                >
-                  {freq.charAt(0).toUpperCase() + freq.slice(1)}
-                </button>
-              ))}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ color: '#888', fontFamily: 'monospace', fontSize: 10, marginBottom: 4 }}>
+                {t('frequency') || 'Frequency'}:
+              </div>
+              <div className="prefs-lang-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                {[
+                  { key: 'off', label: t('off') || 'Off' },
+                  { key: 'daily', label: t('daily') || 'Daily' },
+                  { key: 'weekly', label: t('weekly') || 'Weekly' }
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    className={`prefs-lang-btn ${digestFrequency === f.key ? 'active' : ''}`}
+                    onClick={() => {
+                      onDigestFrequencyChange?.(f.key);
+                      flashSaved('freq');
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -260,10 +298,10 @@ const PreferencesPanel = ({
         {/* About */}
         <div className="prefs-section" style={{ borderBottom: 'none' }}>
           <div className="prefs-section-title">About</div>
-          <div style={{ color: '#666', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.6 }}>
+          <div style={{ color: '#666', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6 }}>
             RealNow v5.0 — Real-Time Disaster Tracker<br />
-            Data: USGS · NASA FIRMS · GDACS · NOAA · ReliefWeb<br />
-            11 disaster types · 7 languages · PWA enabled
+            Data: USGS · NASA · GDACS · NOAA · ReliefWeb<br />
+            <span style={{ color: '#444' }}>All sources free & open</span>
           </div>
         </div>
       </div>

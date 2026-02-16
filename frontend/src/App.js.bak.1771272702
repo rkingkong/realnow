@@ -1638,7 +1638,7 @@ function App() {
   
   // v5: Smart proximity alerts (replaces basic useCriticalAlerts when watch area is set)
   // Falls back to legacy alerts when no watch area
-  useSmartAlerts(data, alertsEnabled, watchArea, { soundEnabled });
+  useSmartAlerts(data, watchArea, alertsEnabled && soundEnabled);
   useCriticalAlerts(data, alertsEnabled && !watchArea);
   
   // PWA service worker
