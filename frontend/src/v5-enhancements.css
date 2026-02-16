@@ -142,10 +142,10 @@
 /* ════════════════════════════════════════════
    PREFERENCES PANEL
    ════════════════════════════════════════════ */
-.prefs-overlay { position: fixed; inset: 0; z-index: 2050; background: rgba(0,0,0,0.4); }
+.prefs-overlay { position: fixed; inset: 0; z-index: 2050; background: rgba(0,0,0,0.4); display: flex; justify-content: flex-end; }
 .prefs-panel {
-  position: fixed; top: 0; right: 0; width: 300px; max-width: 85vw; height: 100%;
-  z-index: 2100; background: rgba(12,12,22,0.98);
+  position: relative; width: 300px; max-width: 85vw; height: 100%;
+  z-index: 1; background: rgba(12,12,22,0.98);
   border-left: 1px solid rgba(255,255,255,0.1); box-shadow: -10px 0 40px rgba(0,0,0,0.4);
   display: flex; flex-direction: column; animation: prefs-slide 0.25s ease; overflow-y: auto;
 }

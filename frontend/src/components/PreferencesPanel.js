@@ -148,9 +148,8 @@ const PreferencesPanel = ({
   if (!isOpen) return null;
 
   return (
-    <>
-      <div className="prefs-overlay" onClick={onClose} />
-      <div className="prefs-panel" role="dialog" aria-label="Settings" aria-modal="true">
+    <div className="prefs-overlay" onClick={onClose}>
+      <div className="prefs-panel" role="dialog" aria-label="Settings" aria-modal="true" onClick={e => e.stopPropagation()}>
         <div className="prefs-header">
           <span className="prefs-title">⚙️ Settings</span>
           <button className="prefs-close" onClick={onClose} aria-label="Close settings">✕</button>
@@ -268,7 +267,7 @@ const PreferencesPanel = ({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
