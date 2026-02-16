@@ -1,17 +1,23 @@
-// App.js - v4.0 MEGA UPDATE
-// ALL 10 ENHANCEMENTS:
-// 1. Marker Clustering (react-leaflet-markercluster)
-// 2. Location Search + Watch Area (Nominatim geocoding)
-// 3. Heatmap Layer Toggle (leaflet.heat)
-// 4. Event Detail Drawer (slide-in side panel)
-// 5. Historical Timeline Playback (scrubber)
-// 6. Additional Data Sources (landslides, tsunamis)
-// 7. PWA + Offline Support (service worker registration)
-// 8. Sharing & Deep Links (URL params)
-// 9. Country/Region Statistics (reverse geocode)
-// 10. Sound/Notification Alerts (critical event alerts)
+// App.js - v5.0 COMPLETE
+// ═══════════════════════════════════════════════════════════
+// Carries forward ALL v4.0 features:
+//   Marker rendering, Location Search, Watch Area, Heatmap,
+//   Event Detail Drawer, Timeline Scrubber, LiveFeed,
+//   StatsDashboard, PWA/Offline, Sharing/Deep Links,
+//   Region Statistics, Sound/Notification Alerts, Mobile Menu
 //
-// Carries forward: flood staleness, wildfire badges, LiveFeed click-to-fly, time filter, stats dashboard
+// NEW v5.0 enhancements:
+//   1. Map Style Switcher (dark/satellite/terrain/light)
+//   2. Disaster Polygon Overlays (flood/wildfire/drought zones)
+//   3. Cyclone Wind Radius Circles
+//   4. Grid-based Marker Clustering (fires layer)
+//   5. Analytics Dashboard (donut charts, severity, countries, sources)
+//   6. User Preferences Panel (language, alerts, digest, map style)
+//   7. Smart Proximity Alerts (distance-aware notifications)
+//   8. Internationalization (7 languages + RTL)
+//   9. Accessibility (skip-nav, focus-visible, reduced-motion, aria)
+//  10. v5 CSS theme + responsive
+// ═══════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Polygon, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
@@ -20,6 +26,15 @@ import 'leaflet/dist/leaflet.css';
 import './App.css';
 import './LiveFeed.css';
 import './v4-enhancements.css';
+import './v5-enhancements.css';
+
+// v5: New component imports
+import { MapStyleSwitcher, DisasterPolygons, CycloneTrackLine } from './components/MapEnhancements';
+import ClusterLayer from './components/ClusterLayer';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
+import PreferencesPanel from './components/PreferencesPanel';
+import { useSmartAlerts } from './components/SmartAlerts';
+import { I18nProvider, useTranslation } from './i18n/i18n';
 
 // =====================================================================
 // DISASTER CONFIGURATION
@@ -45,7 +60,6 @@ const DISASTER_CONFIG = {
       const mag = item.magnitude || 0;
       if (mag >= 6) return 0.9; if (mag >= 5) return 0.7; return 0.5;
     },
-    // v4: critical threshold for alerts
     isCritical: (item) => (item.magnitude || 0) >= 6
   },
   volcanoes: { 
@@ -151,7 +165,6 @@ const DISASTER_CONFIG = {
     getOpacity: (item) => item.alertLevel === 'Red' ? 0.8 : 0.5,
     isCritical: (item) => item.alertLevel === 'Red'
   },
-  // v4: NEW DATA TYPES
   landslides: {
     color: '#8B4513', icon: '⛰️', name: 'Landslides', enabled: true,
     getRadius: (item) => {
@@ -275,6 +288,21 @@ const getEventTimestamp = (item, type) => {
   return Date.now();
 };
 
+const haversineDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+};
+
+const hexToRgb = (hex) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [255, 255, 255];
+};
+
 // =====================================================================
 // FILTER DATA BY TIME
 // =====================================================================
@@ -297,7 +325,7 @@ const filterDataByTime = (data, timeFilter) => {
 };
 
 // =====================================================================
-// v4: NOTIFICATION SOUND (Web Audio API — no external files needed)
+// NOTIFICATION SOUND (Web Audio API)
 // =====================================================================
 const playAlertSound = () => {
   try {
@@ -313,11 +341,11 @@ const playAlertSound = () => {
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.4);
-  } catch (e) { /* silent fail on browsers that block audio */ }
+  } catch (e) { /* silent fail */ }
 };
 
 // =====================================================================
-// v4: BROWSER NOTIFICATIONS
+// BROWSER NOTIFICATIONS
 // =====================================================================
 const sendBrowserNotification = (title, body, icon) => {
   if ('Notification' in window && Notification.permission === 'granted') {
@@ -328,7 +356,7 @@ const sendBrowserNotification = (title, body, icon) => {
 };
 
 // =====================================================================
-// v4: PWA SERVICE WORKER REGISTRATION
+// PWA SERVICE WORKER REGISTRATION
 // =====================================================================
 const registerServiceWorker = () => {
   if ('serviceWorker' in navigator) {
@@ -341,7 +369,7 @@ const registerServiceWorker = () => {
 };
 
 // =====================================================================
-// v4: URL SHARING — read/write deep link params
+// URL SHARING — read/write deep link params
 // =====================================================================
 const getShareParams = () => {
   const params = new URLSearchParams(window.location.search);
@@ -359,11 +387,8 @@ const buildShareUrl = (item, type) => {
   if (!coords) return window.location.origin;
   const id = item.id || item.name || '';
   const params = new URLSearchParams({
-    event: id,
-    type: type,
-    lat: coords.lat.toFixed(4),
-    lon: coords.lon.toFixed(4),
-    zoom: '8'
+    event: id, type: type,
+    lat: coords.lat.toFixed(4), lon: coords.lon.toFixed(4), zoom: '8'
   });
   return `${window.location.origin}?${params.toString()}`;
 };
@@ -416,7 +441,7 @@ const useRealtimeData = () => {
 };
 
 // =====================================================================
-// v4: LOCATION SEARCH COMPONENT (Nominatim free geocoding)
+// LOCATION SEARCH COMPONENT
 // =====================================================================
 const LocationSearch = ({ onSelect, onWatchArea }) => {
   const [query, setQuery] = useState('');
@@ -432,7 +457,7 @@ const LocationSearch = ({ onSelect, onWatchArea }) => {
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`,
-          { headers: { 'User-Agent': 'RealNow-DisasterTracker/4.0' } }
+          { headers: { 'User-Agent': 'RealNow-DisasterTracker/5.0' } }
         );
         const data = await res.json();
         setResults(data);
@@ -455,46 +480,39 @@ const LocationSearch = ({ onSelect, onWatchArea }) => {
     if (selected) {
       const radius = watchRadius || 200;
       onWatchArea({
-        lat: parseFloat(selected.lat),
-        lon: parseFloat(selected.lon),
-        name: selected.display_name.split(',')[0],
-        radius
+        lat: parseFloat(selected.lat), lon: parseFloat(selected.lon),
+        name: selected.display_name.split(',')[0], radius
       });
       setWatchRadius(radius);
     }
   };
 
   return (
-    <div className="search-container">
+    <div className="search-container" role="search" aria-label="Location search">
       <div className="search-input-row">
-        <span className="search-icon">🔍</span>
+        <span className="search-icon" aria-hidden="true">🔍</span>
         <input
-          type="text"
-          className="search-input"
-          placeholder="Search location..."
-          value={query}
+          type="text" className="search-input" placeholder="Search location..."
+          value={query} aria-label="Search for a location"
           onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
           onFocus={() => results.length > 0 && setIsOpen(true)}
         />
         {query && (
-          <button className="search-clear" onClick={() => { setQuery(''); setResults([]); setIsOpen(false); }}>✕</button>
+          <button className="search-clear" onClick={() => { setQuery(''); setResults([]); setIsOpen(false); }} aria-label="Clear search">✕</button>
         )}
       </div>
       {isOpen && (
-        <div className="search-results">
+        <div className="search-results" role="listbox">
           {results.map((r, i) => (
-            <div key={i} className="search-result-item" onClick={() => handleSelect(r)}>
+            <div key={i} className="search-result-item" role="option" onClick={() => handleSelect(r)}>
               <span className="result-icon">📍</span>
               <span className="result-text">{r.display_name}</span>
             </div>
           ))}
           {results.length > 0 && (
             <div className="search-watch-row">
-              <select
-                className="watch-radius-select"
-                value={watchRadius || 200}
-                onChange={(e) => setWatchRadius(parseInt(e.target.value))}
-              >
+              <select className="watch-radius-select" value={watchRadius || 200}
+                onChange={(e) => setWatchRadius(parseInt(e.target.value))} aria-label="Watch area radius">
                 <option value={50}>50 km</option>
                 <option value={100}>100 km</option>
                 <option value={200}>200 km</option>
@@ -510,7 +528,7 @@ const LocationSearch = ({ onSelect, onWatchArea }) => {
 };
 
 // =====================================================================
-// v4: HEATMAP LAYER (using Canvas rendering for performance)
+// HEATMAP LAYER
 // =====================================================================
 const HeatmapLayer = ({ data, enabledLayers }) => {
   const map = useMap();
@@ -518,7 +536,6 @@ const HeatmapLayer = ({ data, enabledLayers }) => {
   
   useEffect(() => {
     if (!map) return;
-    
     const canvas = document.createElement('canvas');
     canvas.style.position = 'absolute';
     canvas.style.top = '0';
@@ -526,7 +543,6 @@ const HeatmapLayer = ({ data, enabledLayers }) => {
     canvas.style.pointerEvents = 'none';
     canvas.style.zIndex = '400';
     canvasRef.current = canvas;
-    
     const container = map.getContainer();
     container.appendChild(canvas);
     
@@ -570,7 +586,6 @@ const HeatmapLayer = ({ data, enabledLayers }) => {
     
     map.on('move zoom viewreset', render);
     render();
-    
     return () => {
       map.off('move zoom viewreset', render);
       if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
@@ -580,15 +595,18 @@ const HeatmapLayer = ({ data, enabledLayers }) => {
   return null;
 };
 
-const hexToRgb = (hex) => {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [255, 255, 255];
-};
-
 // =====================================================================
-// v4: EVENT DETAIL DRAWER (slide-in side panel)
+// EVENT DETAIL DRAWER
 // =====================================================================
 const DetailDrawer = ({ item, type, onClose, onShare }) => {
+  // v5: Keyboard support — Escape to close (must be before early return)
+  useEffect(() => {
+    if (!item || !type) return;
+    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [item, type, onClose]);
+
   if (!item || !type) return null;
   
   const config = DISASTER_CONFIG[type];
@@ -601,7 +619,6 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       if (onShare) onShare('Link copied!');
     }).catch(() => {
-      // Fallback
       const input = document.createElement('input');
       input.value = shareUrl;
       document.body.appendChild(input);
@@ -613,10 +630,10 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
   };
   
   return (
-    <div className="detail-drawer">
+    <div className="detail-drawer" role="dialog" aria-label="Event details">
       <div className="drawer-header">
         <div className="drawer-icon-title">
-          <span className="drawer-icon">{config?.icon}</span>
+          <span className="drawer-icon" aria-hidden="true">{config?.icon}</span>
           <div>
             <h3 className="drawer-title">
               {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || config?.name)}
@@ -624,11 +641,10 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
             <span className={`drawer-severity sev-${severity.toLowerCase().replace(/ /g, '-')}`}>{severity}</span>
           </div>
         </div>
-        <button className="drawer-close" onClick={onClose}>✕</button>
+        <button className="drawer-close" onClick={onClose} aria-label="Close details">✕</button>
       </div>
       
       <div className="drawer-body">
-        {/* Event-specific details */}
         {type === 'earthquakes' && (
           <div className="drawer-section">
             <div className="drawer-row"><span>Magnitude</span><strong>M{item.magnitude?.toFixed(1)}</strong></div>
@@ -696,14 +712,11 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
           </div>
         )}
         
-        {/* Common section */}
         <div className="drawer-section coords-section">
           {coords && (
             <div className="drawer-row"><span>Coordinates</span><strong>{coords.lat.toFixed(4)}, {coords.lon.toFixed(4)}</strong></div>
           )}
-          {item.description && (
-            <div className="drawer-description">{item.description}</div>
-          )}
+          {item.description && <div className="drawer-description">{item.description}</div>}
           {item.source && <div className="drawer-row faded"><span>Source</span><strong>{item.source}</strong></div>}
           {item.sources?.length > 0 && (
             <div className="drawer-links">
@@ -725,7 +738,7 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
 };
 
 // =====================================================================
-// v4: COUNTRY/REGION STATISTICS
+// REGION STATISTICS
 // =====================================================================
 const RegionStats = ({ data, watchArea }) => {
   const stats = useMemo(() => {
@@ -739,8 +752,7 @@ const RegionStats = ({ data, watchArea }) => {
       const nearby = items.filter(item => {
         const coords = getEventCoords(item);
         if (!coords) return false;
-        const dist = haversineDistance(lat, lon, coords.lat, coords.lon);
-        return dist <= radius;
+        return haversineDistance(lat, lon, coords.lat, coords.lon) <= radius;
       });
       if (nearby.length > 0) {
         results[type] = nearby.length;
@@ -754,7 +766,7 @@ const RegionStats = ({ data, watchArea }) => {
   if (!stats || stats.total === 0) return null;
   
   return (
-    <div className="region-stats">
+    <div className="region-stats" role="complementary" aria-label="Watch area statistics">
       <div className="region-stats-header">
         <span className="region-name">📍 {stats.name}</span>
         <span className="region-radius">{stats.radius}km radius</span>
@@ -775,18 +787,8 @@ const RegionStats = ({ data, watchArea }) => {
   );
 };
 
-const haversineDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-};
-
 // =====================================================================
-// v4: WATCH AREA CIRCLE (visual overlay on map)
+// WATCH AREA CIRCLE
 // =====================================================================
 const WatchAreaCircle = ({ watchArea }) => {
   const map = useMap();
@@ -796,20 +798,15 @@ const WatchAreaCircle = ({ watchArea }) => {
     const L = window.L || require('leaflet');
     const circle = L.circle([watchArea.lat, watchArea.lon], {
       radius: watchArea.radius * 1000,
-      color: '#00ff88',
-      fillColor: '#00ff88',
-      fillOpacity: 0.05,
-      weight: 2,
-      dashArray: '8 4',
-      opacity: 0.5
+      color: '#00ff88', fillColor: '#00ff88', fillOpacity: 0.05,
+      weight: 2, dashArray: '8 4', opacity: 0.5
     }).addTo(map);
     
     const label = L.marker([watchArea.lat, watchArea.lon], {
       icon: L.divIcon({
         className: 'watch-label',
         html: `<div class="watch-label-inner">👁️ ${watchArea.name}</div>`,
-        iconSize: [120, 24],
-        iconAnchor: [60, -10]
+        iconSize: [120, 24], iconAnchor: [60, -10]
       })
     }).addTo(map);
     
@@ -820,7 +817,7 @@ const WatchAreaCircle = ({ watchArea }) => {
 };
 
 // =====================================================================
-// MAP CONTROLLER — handles fly-to for feed clicks & deep links
+// MAP CONTROLLER
 // =====================================================================
 const MapController = ({ flyTarget }) => {
   const map = useMap();
@@ -835,7 +832,7 @@ const MapController = ({ flyTarget }) => {
 };
 
 // =====================================================================
-// TIME CONTROL COMPONENT
+// TIME CONTROL
 // =====================================================================
 const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -846,8 +843,9 @@ const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
       <button
         className={`time-control-button ${isExpanded ? 'expanded' : ''} ${connected ? 'connected' : 'disconnected'}`}
         onClick={() => setIsExpanded(!isExpanded)}
+        aria-expanded={isExpanded} aria-label="Time filter"
       >
-        <span className={`status-indicator ${connected ? 'connected' : 'disconnected'}`}>
+        <span className={`status-indicator ${connected ? 'connected' : 'disconnected'}`} aria-hidden="true">
           {connected ? '🟢' : '🔴'}
         </span>
         <span className="filter-icon">🕐</span>
@@ -855,13 +853,11 @@ const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
         <span className="filter-arrow">{isExpanded ? '▼' : '▲'}</span>
       </button>
       {isExpanded && (
-        <div className="time-control-dropdown">
+        <div className="time-control-dropdown" role="listbox">
           {TIME_FILTERS.map(filter => (
-            <button
-              key={filter.value}
+            <button key={filter.value} role="option" aria-selected={timeFilter === filter.value}
               className={`filter-option ${timeFilter === filter.value ? 'active' : ''}`}
-              onClick={() => { setTimeFilter(filter.value); setIsExpanded(false); }}
-            >
+              onClick={() => { setTimeFilter(filter.value); setIsExpanded(false); }}>
               {filter.label}
             </button>
           ))}
@@ -872,11 +868,11 @@ const TimeControl = ({ timeFilter, setTimeFilter, connected }) => {
 };
 
 // =====================================================================
-// v4: TIMELINE SCRUBBER (historical playback)
+// TIMELINE SCRUBBER
 // =====================================================================
 const TimelineScrubber = ({ data, onTimeChange }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [position, setPosition] = useState(100); // 0-100, 100 = now
+  const [position, setPosition] = useState(100);
   const [isVisible, setIsVisible] = useState(false);
   const intervalRef = useRef(null);
   
@@ -886,13 +882,8 @@ const TimelineScrubber = ({ data, onTimeChange }) => {
     let pos = 0;
     intervalRef.current = setInterval(() => {
       pos += 0.5;
-      if (pos >= 100) {
-        pos = 100;
-        setIsPlaying(false);
-        clearInterval(intervalRef.current);
-      }
+      if (pos >= 100) { pos = 100; setIsPlaying(false); clearInterval(intervalRef.current); }
       setPosition(pos);
-      // Map position to time: 0 = 7 days ago, 100 = now
       const msAgo = (1 - pos / 100) * 7 * 24 * 60 * 60 * 1000;
       onTimeChange(msAgo);
     }, 100);
@@ -915,45 +906,32 @@ const TimelineScrubber = ({ data, onTimeChange }) => {
   useEffect(() => () => clearInterval(intervalRef.current), []);
   
   if (!isVisible) {
-    return (
-      <button className="timeline-toggle-btn" onClick={() => setIsVisible(true)}>
-        ⏱️ Timeline
-      </button>
-    );
+    return <button className="timeline-toggle-btn" onClick={() => setIsVisible(true)}>⏱️ Timeline</button>;
   }
   
   const daysAgo = ((1 - position / 100) * 7).toFixed(1);
   
   return (
-    <div className="timeline-scrubber">
+    <div className="timeline-scrubber" role="region" aria-label="Timeline playback">
       <div className="timeline-header">
         <span className="timeline-label">⏱️ TIMELINE</span>
         <span className="timeline-time">{position >= 99 ? 'NOW' : `${daysAgo}d ago`}</span>
-        <button className="timeline-close" onClick={() => { stop(); setIsVisible(false); }}>✕</button>
+        <button className="timeline-close" onClick={() => { stop(); setIsVisible(false); }} aria-label="Close timeline">✕</button>
       </div>
       <div className="timeline-controls">
-        <button className="timeline-btn" onClick={isPlaying ? stop : play}>
+        <button className="timeline-btn" onClick={isPlaying ? stop : play} aria-label={isPlaying ? 'Stop' : 'Play'}>
           {isPlaying ? '⏹' : '▶️'}
         </button>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="0.5"
-          value={position}
-          onChange={handleSlider}
-          className="timeline-slider"
-        />
+        <input type="range" min="0" max="100" step="0.5" value={position}
+          onChange={handleSlider} className="timeline-slider" aria-label="Timeline position" />
       </div>
-      <div className="timeline-ticks">
-        <span>7d</span><span>5d</span><span>3d</span><span>1d</span><span>Now</span>
-      </div>
+      <div className="timeline-ticks"><span>7d</span><span>5d</span><span>3d</span><span>1d</span><span>Now</span></div>
     </div>
   );
 };
 
 // =====================================================================
-// STATS DASHBOARD COMPONENT
+// STATS DASHBOARD
 // =====================================================================
 const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) => {
   const [isMinimized, setIsMinimized] = useState(false);
@@ -1031,13 +1009,13 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
   }
 
   return (
-    <div className="stats-dashboard enhanced">
+    <div className="stats-dashboard enhanced" role="region" aria-label="Disaster statistics dashboard">
       <div className="dashboard-header">
         <div className="dashboard-title">
           <span>📊 DISASTER MONITOR</span>
           <span className="dashboard-subtitle">{connected ? '⚡ streaming' : '⏸ reconnecting...'}</span>
         </div>
-        <button className="minimize-toggle in-header" onClick={() => setIsMinimized(true)}>—</button>
+        <button className="minimize-toggle in-header" onClick={() => setIsMinimized(true)} aria-label="Minimize dashboard">—</button>
       </div>
       <div className="stats-grid">
         {allTypes.map(key => {
@@ -1047,13 +1025,13 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
           const isEnabled = enabledLayers[key];
           const severityClass = stats.severity.toLowerCase();
           return (
-            <div
-              key={key}
+            <div key={key}
               className={`stat-card enhanced ${isEnabled ? 'active' : ''} ${severityClass}`}
               onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}
+              role="switch" aria-checked={isEnabled} aria-label={`${config.name}: ${stats.count} events`}
             >
               <div className="stat-header">
-                <span className="stat-icon">{config.icon}</span>
+                <span className="stat-icon" aria-hidden="true">{config.icon}</span>
                 <span className={`stat-count ${stats.severity === 'EXTREME' ? 'pulse' : ''}`}>{stats.count}</span>
               </div>
               <div className="stat-name">{config.name}</div>
@@ -1074,7 +1052,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
         </div>
       )}
       {showAlerts && (
-        <div className="alerts-section">
+        <div className="alerts-section" role="alert">
           {data.volcanoes?.filter(v => v.alertLevel === 'Red').map((v, i) => (
             <div key={`v${i}`} className="critical-alert volcano">🌋 ERUPTION: {v.name} - {v.country}</div>
           ))}
@@ -1094,7 +1072,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
 };
 
 // =====================================================================
-// POPUP CONTENT COMPONENT
+// POPUP CONTENT
 // =====================================================================
 const PopupContent = ({ item, type, config, onOpenDrawer }) => {
   const severity = config.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
@@ -1168,7 +1146,7 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
 };
 
 // =====================================================================
-// LIVE FEED COMPONENT
+// LIVE FEED
 // =====================================================================
 const FEED_ICONS = {
   earthquakes: { icon: '🌍', color: '#ff4444', label: 'Earthquake' },
@@ -1217,19 +1195,14 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
           type, ...meta, severity,
           title: item.name || item.place || item.event || meta.label,
           lat: coords.lat, lon: coords.lon,
-          timestamp: ts, isNew: true,
-          item // keep reference for drawer
+          timestamp: ts, isNew: true, item
         });
       });
     });
 
     if (newItems.length > 0) {
-      // Sort newest first so the feed shows a mix of types, not just whichever has most items
       newItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setFeedItems(prev => {
-        const combined = [...newItems, ...prev].slice(0, MAX_FEED_ITEMS);
-        return combined;
-      });
+      setFeedItems(prev => [...newItems, ...prev].slice(0, MAX_FEED_ITEMS));
       if (isMinimized) setUnreadCount(prev => prev + newItems.length);
     }
 
@@ -1237,9 +1210,7 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
   }, [data, isMinimized]);
 
   useEffect(() => {
-    if (isAutoScroll && listRef.current) {
-      listRef.current.scrollTop = 0;
-    }
+    if (isAutoScroll && listRef.current) listRef.current.scrollTop = 0;
   }, [feedItems, isAutoScroll]);
 
   const handleScroll = () => {
@@ -1249,7 +1220,8 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
 
   if (isMinimized) {
     return (
-      <div className="livefeed-minimized-pill" onClick={() => { setIsMinimized(false); setUnreadCount(0); }}>
+      <div className="livefeed-minimized-pill" onClick={() => { setIsMinimized(false); setUnreadCount(0); }}
+        role="button" aria-label={`Open live feed. ${unreadCount} unread events.`}>
         <span className="pill-pulse"></span>
         <span className="pill-icon">📡</span>
         <span className="pill-label">LIVE</span>
@@ -1259,11 +1231,9 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
   }
 
   return (
-    <div
-      className={`livefeed-container ${isHovered ? 'hovered' : ''}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+    <div className={`livefeed-container ${isHovered ? 'hovered' : ''}`}
+      onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}
+      role="log" aria-label="Live event feed" aria-live="polite">
       <div className="livefeed-header">
         <div className="livefeed-header-left">
           <span className={`livefeed-dot ${connected ? 'connected' : 'disconnected'}`}></span>
@@ -1274,7 +1244,7 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
           {!isAutoScroll && (
             <button className="livefeed-btn livefeed-btn-top" onClick={() => { if (listRef.current) listRef.current.scrollTop = 0; setIsAutoScroll(true); }}>↑ New</button>
           )}
-          <button className="livefeed-btn" onClick={() => setIsMinimized(true)}>—</button>
+          <button className="livefeed-btn" onClick={() => setIsMinimized(true)} aria-label="Minimize feed">—</button>
         </div>
       </div>
 
@@ -1286,16 +1256,15 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
           </div>
         ) : (
           feedItems.map(item => (
-            <div
-              key={item.feedId}
+            <div key={item.feedId}
               className={`livefeed-item ${item.isNew ? 'livefeed-item-new' : ''} ${activeEventId === item.feedId ? 'livefeed-item-active' : ''}`}
               style={{ '--accent': item.color }}
               onClick={() => onEventClick && onEventClick(item)}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' && onEventClick) onEventClick(item); }}
             >
               <span className="livefeed-item-accent" style={{ background: item.color }}></span>
-              <div className="livefeed-item-icon" style={{ background: `${item.color}18` }}>
-                {item.icon}
-              </div>
+              <div className="livefeed-item-icon" style={{ background: `${item.color}18` }}>{item.icon}</div>
               <div className="livefeed-item-body">
                 <div className="livefeed-item-top">
                   <span className="livefeed-item-label" style={{ color: item.color }}>{item.label}</span>
@@ -1318,26 +1287,22 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId }) => {
 };
 
 // =====================================================================
-// v4: CRITICAL EVENT ALERT MONITOR
+// LEGACY CRITICAL ALERT HOOK (kept as fallback; v5 uses useSmartAlerts)
 // =====================================================================
 const useCriticalAlerts = (data, alertsEnabled) => {
   const seenCritical = useRef(new Set());
   
   useEffect(() => {
     if (!alertsEnabled) return;
-    
     Object.entries(data).forEach(([type, items]) => {
       if (!items?.length) return;
       const config = DISASTER_CONFIG[type];
       if (!config?.isCritical) return;
-      
       items.forEach(item => {
         if (!config.isCritical(item)) return;
         const id = item.id || item.name || JSON.stringify(getEventCoords(item));
         if (seenCritical.current.has(id)) return;
         seenCritical.current.add(id);
-        
-        // Play sound + browser notification
         playAlertSound();
         const title = `⚠️ ${config.name} Alert`;
         const body = `${item.name || item.place || 'Critical event detected'} — ${config.getSeverity?.(item) || 'ALERT'}`;
@@ -1354,18 +1319,16 @@ const useIsMobile = (breakpoint = 640) => {
   const [isMobile, setIsMobile] = useState(() => 
     typeof window !== 'undefined' ? window.innerWidth <= breakpoint : false
   );
-  
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= breakpoint);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [breakpoint]);
-  
   return isMobile;
 };
 
 // =====================================================================
-// MOBILE MENU COMPONENT — Unified drawer for all controls
+// MOBILE MENU
 // =====================================================================
 const MobileMenu = ({
   data, enabledLayers, setEnabledLayers, connected,
@@ -1377,7 +1340,6 @@ const MobileMenu = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
-  // Search state (embedded)
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1391,7 +1353,7 @@ const MobileMenu = ({
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`,
-          { headers: { 'User-Agent': 'RealNow-DisasterTracker/4.0' } }
+          { headers: { 'User-Agent': 'RealNow-DisasterTracker/5.0' } }
         );
         const d = await res.json();
         setSearchResults(d);
@@ -1445,8 +1407,7 @@ const MobileMenu = ({
   const totalEvents = allTypes.reduce((sum, type) => sum + (data[type]?.length || 0), 0);
   let criticalCount = 0;
   allTypes.forEach(type => {
-    const items = data[type] || [];
-    items.forEach(item => {
+    (data[type] || []).forEach(item => {
       if (DISASTER_CONFIG[type].isCritical && DISASTER_CONFIG[type].isCritical(item)) criticalCount++;
     });
   });
@@ -1455,14 +1416,10 @@ const MobileMenu = ({
 
   return (
     <>
-      {/* ===== TOP BAR: Search + Menu button ===== */}
       <div className="m-topbar">
         <div className="m-search-row">
           <span className="m-search-icon">🔍</span>
-          <input
-            type="text"
-            className="m-search-input"
-            placeholder="Search location..."
+          <input type="text" className="m-search-input" placeholder="Search location..."
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); doSearch(e.target.value); }}
             onFocus={() => { if (searchResults.length > 0) setSearchOpen(true); }}
@@ -1477,13 +1434,11 @@ const MobileMenu = ({
         </button>
       </div>
 
-      {/* ===== SEARCH RESULTS DROPDOWN (below topbar) ===== */}
       {searchOpen && searchResults.length > 0 && (
         <div className="m-search-results">
           {searchResults.map((r, i) => (
             <div key={i} className="m-search-result-item" onClick={() => handleSearchSelect(r)}>
-              <span>📍</span>
-              <span className="m-search-result-text">{r.display_name}</span>
+              <span>📍</span><span className="m-search-result-text">{r.display_name}</span>
             </div>
           ))}
           <div className="m-search-watch-row">
@@ -1496,7 +1451,6 @@ const MobileMenu = ({
         </div>
       )}
 
-      {/* ===== BOTTOM STATUS BAR ===== */}
       <div className="m-bottombar">
         <div className="m-status-pill" onClick={() => setIsOpen(true)}>
           <span className={`m-status-dot ${connected ? 'on' : ''}`}></span>
@@ -1505,7 +1459,6 @@ const MobileMenu = ({
         </div>
       </div>
 
-      {/* ===== MENU DRAWER (slides in from right) ===== */}
       {isOpen && (
         <>
           <div className="m-menu-backdrop" onClick={() => setIsOpen(false)} />
@@ -1522,7 +1475,6 @@ const MobileMenu = ({
             </div>
 
             <div className="m-menu-body">
-              {/* ── Stats Grid ── */}
               <div className="m-section">
                 <div className="m-section-label">LAYERS</div>
                 <div className="m-stats-grid">
@@ -1532,11 +1484,9 @@ const MobileMenu = ({
                     const stats = getStats(key, items);
                     const isEnabled = enabledLayers[key];
                     return (
-                      <div
-                        key={key}
+                      <div key={key}
                         className={`m-stat-card ${isEnabled ? 'active' : 'off'} sev-${stats.severity.toLowerCase()}`}
-                        onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}
-                      >
+                        onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}>
                         <div className="m-stat-top">
                           <span className="m-stat-icon">{config.icon}</span>
                           <span className="m-stat-count">{stats.count}</span>
@@ -1552,52 +1502,32 @@ const MobileMenu = ({
                 </div>
               </div>
 
-              {/* ── Controls ── */}
               <div className="m-section">
                 <div className="m-section-label">CONTROLS</div>
                 <div className="m-controls-row">
-                  <button
-                    className={`m-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
-                    onClick={() => setHeatmapEnabled(!heatmapEnabled)}
-                  >
-                    🔥 Heatmap
-                  </button>
-                  <button
-                    className={`m-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
+                  <button className={`m-ctrl-btn ${heatmapEnabled ? 'active' : ''}`} onClick={() => setHeatmapEnabled(!heatmapEnabled)}>🔥 Heatmap</button>
+                  <button className={`m-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
                     onClick={() => {
                       const newVal = !alertsEnabled;
                       setAlertsEnabled(newVal);
                       localStorage.setItem('realnow_alerts', String(newVal));
                       if (newVal && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-                    }}
-                  >
-                    🔔 Alerts
-                  </button>
-                  {watchArea && (
-                    <button className="m-ctrl-btn" onClick={() => { setWatchArea(null); }}>
-                      ❌ Clear Watch
-                    </button>
-                  )}
+                    }}>🔔 Alerts</button>
+                  {watchArea && <button className="m-ctrl-btn" onClick={() => setWatchArea(null)}>❌ Clear Watch</button>}
                 </div>
               </div>
 
-              {/* ── Time Filter ── */}
               <div className="m-section">
                 <div className="m-section-label">TIME FILTER</div>
                 <div className="m-time-grid">
                   {TIME_FILTERS.map(f => (
-                    <button
-                      key={f.value}
+                    <button key={f.value}
                       className={`m-time-btn ${timeFilter === f.value ? 'active' : ''}`}
-                      onClick={() => setTimeFilter(f.value)}
-                    >
-                      {f.label}
-                    </button>
+                      onClick={() => setTimeFilter(f.value)}>{f.label}</button>
                   ))}
                 </div>
               </div>
 
-              {/* ── Critical Alerts ── */}
               {criticalCount > 0 && (
                 <div className="m-section">
                   <button className="m-alerts-btn" onClick={() => setShowAlerts(!showAlerts)}>
@@ -1625,7 +1555,7 @@ const MobileMenu = ({
             </div>
 
             <div className="m-menu-footer">
-              <span>REALNOW v4.0 — ALL FREE SOURCES</span>
+              <span>REALNOW v5.0 — ALL FREE SOURCES</span>
             </div>
           </div>
         </>
@@ -1635,7 +1565,7 @@ const MobileMenu = ({
 };
 
 // =====================================================================
-// MAIN APP COMPONENT v4.0
+// MAIN APP COMPONENT v5.0
 // =====================================================================
 function App() {
   const { rawData, connected, loading } = useRealtimeData();
@@ -1651,7 +1581,7 @@ function App() {
   const [highlightPos, setHighlightPos] = useState(null);
   const highlightTimer = useRef(null);
   
-  // v4: New state
+  // v4 state (preserved)
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
   const [drawerItem, setDrawerItem] = useState(null);
   const [drawerType, setDrawerType] = useState(null);
@@ -1663,15 +1593,47 @@ function App() {
   });
   const [shareToast, setShareToast] = useState('');
   
+  // ═══════════════════════════════════════════════════════════
+  // v5: NEW STATE
+  // ═══════════════════════════════════════════════════════════
+  const [mapStyle, setMapStyle] = useState(() => {
+    try { return localStorage.getItem('realnow_mapstyle') || 'dark'; } catch { return 'dark'; }
+  });
+  const [language, setLanguage] = useState(() => {
+    try { return localStorage.getItem('realnow_language') || 'en'; } catch { return 'en'; }
+  });
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try { return localStorage.getItem('realnow_sound') !== 'false'; } catch { return true; }
+  });
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showPreferences, setShowPreferences] = useState(false);
+  const [digestEmail, setDigestEmail] = useState(() => {
+    try { return localStorage.getItem('realnow_digest_email') || ''; } catch { return ''; }
+  });
+  const [digestFrequency, setDigestFrequency] = useState(() => {
+    try { return localStorage.getItem('realnow_digest_freq') || 'off'; } catch { return 'off'; }
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // v5: Persist new settings
+  // ═══════════════════════════════════════════════════════════
+  useEffect(() => { try { localStorage.setItem('realnow_mapstyle', mapStyle); } catch {} }, [mapStyle]);
+  useEffect(() => { try { localStorage.setItem('realnow_language', language); } catch {} }, [language]);
+  useEffect(() => { try { localStorage.setItem('realnow_sound', String(soundEnabled)); } catch {} }, [soundEnabled]);
+  useEffect(() => { try { localStorage.setItem('realnow_digest_email', digestEmail); } catch {} }, [digestEmail]);
+  useEffect(() => { try { localStorage.setItem('realnow_digest_freq', digestFrequency); } catch {} }, [digestFrequency]);
+
   const data = filterDataByTime(rawData, timeFilter);
   
-  // v4: Critical alert monitor
-  useCriticalAlerts(data, alertsEnabled);
+  // v5: Smart proximity alerts (replaces basic useCriticalAlerts when watch area is set)
+  // Falls back to legacy alerts when no watch area
+  useSmartAlerts(data, watchArea, alertsEnabled && soundEnabled);
+  useCriticalAlerts(data, alertsEnabled && !watchArea);
   
-  // v4: Register PWA service worker
+  // PWA service worker
   useEffect(() => { registerServiceWorker(); }, []);
   
-  // v4: Handle deep link on mount
+  // Handle deep link on mount
   useEffect(() => {
     const params = getShareParams();
     if (params.lat && params.lon) {
@@ -1681,21 +1643,32 @@ function App() {
     }
   }, []);
   
-  // v4: Request notification permission
+  // Notification permission
   useEffect(() => {
     if (alertsEnabled && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, [alertsEnabled]);
   
-  // v4: Persist watch area
+  // Persist watch area
   useEffect(() => {
-    if (watchArea) {
-      localStorage.setItem('realnow_watcharea', JSON.stringify(watchArea));
-    } else {
-      localStorage.removeItem('realnow_watcharea');
-    }
+    if (watchArea) localStorage.setItem('realnow_watcharea', JSON.stringify(watchArea));
+    else localStorage.removeItem('realnow_watcharea');
   }, [watchArea]);
+
+  // v5: Sync preferences to backend (fire-and-forget)
+  useEffect(() => {
+    const prefs = {
+      enabledLayers, mapStyle, language, soundEnabled,
+      alertsEnabled, digestEmail, digestFrequency,
+      watchArea: watchArea ? { lat: watchArea.lat, lon: watchArea.lon, radius: watchArea.radius, name: watchArea.name } : null
+    };
+    fetch('/api/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prefs)
+    }).catch(() => {}); // silent fail — preferences are optional
+  }, [enabledLayers, mapStyle, language, soundEnabled, alertsEnabled, digestEmail, digestFrequency, watchArea]);
 
   // Feed click handler
   const handleFeedClick = useCallback((feedItem) => {
@@ -1706,40 +1679,33 @@ function App() {
     highlightTimer.current = setTimeout(() => { setHighlightPos(null); setActiveEventId(null); }, 8000);
   }, []);
 
-  // v4: Search select handler
   const handleSearchSelect = useCallback((result) => {
     setFlyTarget({ lat: result.lat, lon: result.lon, zoom: result.zoom || 10, _ts: Date.now() });
   }, []);
   
-  // v4: Watch area handler
   const handleWatchArea = useCallback((area) => {
     setWatchArea(area);
     setFlyTarget({ lat: area.lat, lon: area.lon, zoom: 8, _ts: Date.now() });
   }, []);
 
-  // v4: Open detail drawer
   const handleOpenDrawer = useCallback((item, type) => {
     setDrawerItem(item);
     setDrawerType(type);
   }, []);
   
-  // v4: Timeline scrubber handler
   const handleTimelineChange = useCallback((msAgo) => {
-    if (msAgo === 0) {
-      setTimeFilter(0);
-    } else {
-      setTimeFilter(msAgo);
-    }
+    setTimeFilter(msAgo === 0 ? 0 : msAgo);
   }, []);
 
-  // v4: Share toast
   const handleShare = useCallback((msg) => {
     setShareToast(msg);
     setTimeout(() => setShareToast(''), 2500);
   }, []);
 
-  // Render markers
+  // Render markers (for non-fire, non-clustered types)
   const renderDisasterMarkers = (items, type) => {
+    // v5: fires use ClusterLayer instead
+    if (type === 'fires') return null;
     if (!enabledLayers[type] || !items?.length) return null;
     const config = DISASTER_CONFIG[type];
     const markers = [];
@@ -1789,113 +1755,179 @@ function App() {
       <div className="loading-screen">
         <div className="loading-spinner">🌍</div>
         <div>Loading Real-Time Disaster Data...</div>
-        <div style={{fontSize: '0.8em', color: '#666', marginTop: '8px'}}>v4.0 — All Free Sources</div>
+        <div style={{fontSize: '0.8em', color: '#666', marginTop: '8px'}}>v5.0 — All Free Sources</div>
       </div>
     );
   }
 
   return (
-    <div className="app-container">
-      <MapContainer center={[20, 0]} zoom={2} className="map-container" zoomControl={false} worldCopyJump={true}>
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        />
-        
-        <MapController flyTarget={flyTarget} />
-        
-        {/* v4: Heatmap layer */}
-        {heatmapEnabled && <HeatmapLayer data={data} enabledLayers={enabledLayers} />}
-        
-        {/* v4: Watch area circle */}
-        {watchArea && <WatchAreaCircle watchArea={watchArea} />}
-        
-        {/* Disaster markers */}
-        {Object.keys(data).map(type => renderDisasterMarkers(data[type], type))}
+    <I18nProvider language={language}>
+      <div className="app-container" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+        {/* v5: Skip navigation link for accessibility */}
+        <a href="#main-map" className="sr-only" style={{
+          position: 'absolute', top: '-40px', left: 0, background: '#000', color: '#fff',
+          padding: '8px 16px', zIndex: 10000, fontSize: '14px',
+          transition: 'top 0.2s'
+        }} onFocus={(e) => e.target.style.top = '0'}
+          onBlur={(e) => e.target.style.top = '-40px'}>
+          Skip to map
+        </a>
 
-        {/* Highlight rings */}
-        {highlightPos && (
+        <MapContainer id="main-map" center={[20, 0]} zoom={2} className="map-container" zoomControl={false} worldCopyJump={true}>
+          {/* v5: MapStyleSwitcher replaces hardcoded TileLayer */}
+          <MapStyleSwitcher mapStyle={mapStyle} onStyleChange={setMapStyle} />
+          
+          <MapController flyTarget={flyTarget} />
+          
+          {/* v4: Heatmap layer */}
+          {heatmapEnabled && <HeatmapLayer data={data} enabledLayers={enabledLayers} />}
+          
+          {/* v4: Watch area circle */}
+          {watchArea && <WatchAreaCircle watchArea={watchArea} />}
+          
+          {/* v5: Disaster polygon overlays (flood zones, wildfire areas, drought zones) */}
+          <DisasterPolygons data={data} enabledLayers={enabledLayers} />
+          
+          {/* v5: Cyclone wind radius circles */}
+          {enabledLayers.cyclones && data.cyclones?.map((cyclone, i) => (
+            <CycloneTrackLine key={`ct-${i}`} cyclone={cyclone} />
+          ))}
+          
+          {/* v5: Clustered fires layer */}
+          {enabledLayers.fires && data.fires?.length > 0 && (
+            <ClusterLayer
+              data={data.fires}
+              type="fires"
+              config={DISASTER_CONFIG.fires}
+              onOpenDrawer={handleOpenDrawer}
+            />
+          )}
+          
+          {/* All other disaster markers */}
+          {Object.keys(data).map(type => renderDisasterMarkers(data[type], type))}
+
+          {/* Highlight rings */}
+          {highlightPos && (
+            <>
+              <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={22} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={3} opacity={0.9} fillOpacity={0} className="highlight-ring" />
+              <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={35} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={1.5} opacity={0.4} fillOpacity={0} className="highlight-ring-outer" />
+            </>
+          )}
+        </MapContainer>
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* v5: TOP-RIGHT BUTTONS (Analytics + Preferences) */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div className="v5-topbar-buttons" style={{
+          position: 'fixed', top: isMobile ? '60px' : '12px',
+          right: isMobile ? '8px' : '16px', zIndex: 1100,
+          display: 'flex', gap: '8px'
+        }}>
+          <button
+            className="v5-topbar-btn"
+            onClick={() => setShowAnalytics(!showAnalytics)}
+            aria-label="Open analytics dashboard"
+            style={{
+              background: showAnalytics ? 'rgba(0,200,255,0.3)' : 'rgba(20,20,30,0.85)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              color: '#fff', padding: '8px 14px', borderRadius: '8px',
+              fontSize: '13px', cursor: 'pointer', backdropFilter: 'blur(10px)',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}
+          >
+            📊 Analytics
+          </button>
+          <button
+            className="v5-topbar-btn"
+            onClick={() => setShowPreferences(!showPreferences)}
+            aria-label="Open preferences"
+            style={{
+              background: showPreferences ? 'rgba(0,255,136,0.3)' : 'rgba(20,20,30,0.85)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              color: '#fff', padding: '8px 14px', borderRadius: '8px',
+              fontSize: '13px', cursor: 'pointer', backdropFilter: 'blur(10px)',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}
+          >
+            ⚙️ Settings
+          </button>
+        </div>
+
+        {isMobile ? (
           <>
-            <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={22} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={3} opacity={0.9} fillOpacity={0} className="highlight-ring" />
-            <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={35} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={1.5} opacity={0.4} fillOpacity={0} className="highlight-ring-outer" />
+            <MobileMenu
+              data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers}
+              connected={connected} timeFilter={timeFilter} setTimeFilter={setTimeFilter}
+              heatmapEnabled={heatmapEnabled} setHeatmapEnabled={setHeatmapEnabled}
+              alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}
+              watchArea={watchArea} setWatchArea={setWatchArea}
+              onSearchSelect={handleSearchSelect} onWatchArea={handleWatchArea}
+            />
+            <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
+          </>
+        ) : (
+          <>
+            <LocationSearch onSelect={handleSearchSelect} onWatchArea={handleWatchArea} />
+            <StatsDashboard data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers} connected={connected} />
+            {watchArea && <RegionStats data={data} watchArea={watchArea} />}
+            <TimeControl timeFilter={timeFilter} setTimeFilter={setTimeFilter} connected={connected} />
+            <TimelineScrubber data={data} onTimeChange={handleTimelineChange} />
+            
+            {/* v4 controls bar */}
+            <div className="v4-controls">
+              <button className={`v4-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
+                onClick={() => setHeatmapEnabled(!heatmapEnabled)} title="Toggle heatmap">🔥 Heatmap</button>
+              <button className={`v4-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
+                onClick={() => {
+                  const newVal = !alertsEnabled;
+                  setAlertsEnabled(newVal);
+                  localStorage.setItem('realnow_alerts', String(newVal));
+                  if (newVal && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+                }} title="Toggle alerts">🔔 Alerts</button>
+              {watchArea && (
+                <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title="Clear watch area">❌ Clear Watch</button>
+              )}
+            </div>
+            
+            <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
           </>
         )}
-      </MapContainer>
-      
-      {isMobile ? (
-        <>
-          {/* ===== MOBILE LAYOUT ===== */}
-          <MobileMenu
-            data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers}
-            connected={connected} timeFilter={timeFilter} setTimeFilter={setTimeFilter}
-            heatmapEnabled={heatmapEnabled} setHeatmapEnabled={setHeatmapEnabled}
-            alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}
-            watchArea={watchArea} setWatchArea={setWatchArea}
-            onSearchSelect={handleSearchSelect} onWatchArea={handleWatchArea}
+        
+        {/* v4: Detail Drawer */}
+        <DetailDrawer item={drawerItem} type={drawerType} onClose={() => { setDrawerItem(null); setDrawerType(null); }} onShare={handleShare} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* v5: ANALYTICS DASHBOARD */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {showAnalytics && (
+          <AnalyticsDashboard
+            data={data}
+            enabledLayers={enabledLayers}
+            disasterConfig={DISASTER_CONFIG}
+            onClose={() => setShowAnalytics(false)}
           />
-          
-          {/* Live Feed (minimized pill at bottom-right) */}
-          <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
-        </>
-      ) : (
-        <>
-          {/* ===== DESKTOP LAYOUT ===== */}
-          {/* v4: Location Search */}
-          <LocationSearch onSelect={handleSearchSelect} onWatchArea={handleWatchArea} />
-          
-          {/* Stats Dashboard */}
-          <StatsDashboard data={data} enabledLayers={enabledLayers} setEnabledLayers={setEnabledLayers} connected={connected} />
-          
-          {/* v4: Region stats for watch area */}
-          {watchArea && <RegionStats data={data} watchArea={watchArea} />}
-          
-          {/* Time Control */}
-          <TimeControl timeFilter={timeFilter} setTimeFilter={setTimeFilter} connected={connected} />
-          
-          {/* v4: Timeline Scrubber */}
-          <TimelineScrubber data={data} onTimeChange={handleTimelineChange} />
-          
-          {/* v4: Controls bar (heatmap toggle, alerts toggle, clear watch) */}
-          <div className="v4-controls">
-            <button
-              className={`v4-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
-              onClick={() => setHeatmapEnabled(!heatmapEnabled)}
-              title="Toggle heatmap"
-            >
-              🔥 Heatmap
-            </button>
-            <button
-              className={`v4-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
-              onClick={() => {
-                const newVal = !alertsEnabled;
-                setAlertsEnabled(newVal);
-                localStorage.setItem('realnow_alerts', String(newVal));
-                if (newVal && 'Notification' in window && Notification.permission === 'default') {
-                  Notification.requestPermission();
-                }
-              }}
-              title="Toggle alerts"
-            >
-              🔔 Alerts
-            </button>
-            {watchArea && (
-              <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title="Clear watch area">
-                ❌ Clear Watch
-              </button>
-            )}
-          </div>
-          
-          {/* Live Feed */}
-          <LiveFeed data={data} connected={connected} onEventClick={handleFeedClick} activeEventId={activeEventId} />
-        </>
-      )}
-      
-      {/* v4: Detail Drawer (both mobile + desktop) */}
-      <DetailDrawer item={drawerItem} type={drawerType} onClose={() => { setDrawerItem(null); setDrawerType(null); }} onShare={handleShare} />
-      
-      {/* v4: Share toast */}
-      {shareToast && <div className="share-toast">{shareToast}</div>}
-    </div>
+        )}
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* v5: PREFERENCES PANEL */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {showPreferences && (
+          <PreferencesPanel
+            mapStyle={mapStyle} setMapStyle={setMapStyle}
+            language={language} setLanguage={setLanguage}
+            alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled}
+            soundEnabled={soundEnabled} setSoundEnabled={setSoundEnabled}
+            watchArea={watchArea} setWatchArea={setWatchArea}
+            digestEmail={digestEmail} setDigestEmail={setDigestEmail}
+            digestFrequency={digestFrequency} setDigestFrequency={setDigestFrequency}
+            onClose={() => setShowPreferences(false)}
+          />
+        )}
+        
+        {/* v4: Share toast */}
+        {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
+      </div>
+    </I18nProvider>
   );
 }
 

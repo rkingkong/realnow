@@ -1,6 +1,13 @@
-// COMPLETE PRODUCTION SERVER.JS - v3.0
-// Based on v2.5 + NEW: landslides, tsunamis, deep link, history endpoints
-// All existing functionality preserved exactly
+// COMPLETE PRODUCTION SERVER.JS - v5.0
+// Based on v3.0 + v5 ENHANCEMENTS:
+// - Circuit breaker for resilient data fetching
+// - Rate limiting on all API routes
+// - Geo-deduplication across data sources
+// - Redis TTL safety net (2hr expiration)
+// - User preferences API (anonymous UUID sessions)
+// - Email/SMS digest service (daily/weekly)
+// - Circuit status monitoring endpoint
+// All existing v3.0 functionality preserved exactly
 
 const express = require('express');
 const cors = require('cors');
@@ -8,6 +15,7 @@ const Redis = require('redis');
 const { Server } = require('socket.io');
 const axios = require('axios');
 const cron = require('node-cron');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const app = express();
@@ -32,6 +40,18 @@ redis.connect();
 
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
+
+// =====================================================================
+// v5: LOAD ENHANCEMENTS
+// =====================================================================
+const enhancements = require('./enhancements');
+
+// =====================================================================
+// v5: APPLY MIDDLEWARE (rate limiting, preferences, circuit status)
+// Must be BEFORE route definitions
+// =====================================================================
+enhancements.applyMiddleware(app, redis);
 
 // =====================================
 // COMPREHENSIVE DISASTER DATA AGGREGATOR
@@ -109,7 +129,7 @@ class DisasterDataAggregator {
         priority: 8
       },
 
-      // 9. v3.0 NEW: LANDSLIDES - NASA EONET
+      // 9. LANDSLIDES - NASA EONET
       landslides: {
         url: 'https://eonet.gsfc.nasa.gov/api/v3/events?category=landslides&status=open&limit=50',
         interval: '*/30 * * * *',
@@ -117,7 +137,7 @@ class DisasterDataAggregator {
         priority: 9
       },
 
-      // 10. v3.0 NEW: TSUNAMIS - NOAA PTWC
+      // 10. TSUNAMIS - NOAA PTWC
       tsunamis: {
         url: 'https://www.tsunami.gov/events/xml/PAAQAtom.xml',
         interval: '*/5 * * * *',
@@ -128,7 +148,7 @@ class DisasterDataAggregator {
   }
 
   // ===================
-  // GDACS SPLIT TRANSFORM - FIXED FOR DATA MIXING BUG
+  // GDACS SPLIT TRANSFORM
   // ===================
   async transformGDACSSplitData(data) {
     console.log('📊 Processing GDACS combined data...');
@@ -145,7 +165,7 @@ class DisasterDataAggregator {
       const type = f.properties?.eventtype;
       typeCounts[type] = (typeCounts[type] || 0) + 1;
     });
-    console.log('🐛 GDACS BUG - Mixed event types in response:', typeCounts);
+    console.log('GDACS event types in response:', typeCounts);
     
     const cyclones = data.features.filter(f => f.properties?.eventtype === 'TC');
     const floods = data.features.filter(f => f.properties?.eventtype === 'FL');
@@ -190,7 +210,7 @@ class DisasterDataAggregator {
   }
 
   // ===================
-  // COMPUTE EVENT STATUS (shared by wildfires, floods, etc.)
+  // COMPUTE EVENT STATUS
   // ===================
   computeEventStatus(props) {
     const now = new Date();
@@ -336,7 +356,6 @@ class DisasterDataAggregator {
       }
     }
 
-    // Sample fires by region for better global coverage
     const byRegion = {};
     allFires.forEach(fire => {
       if (!byRegion[fire.region]) byRegion[fire.region] = [];
@@ -938,7 +957,7 @@ class DisasterDataAggregator {
   }
 
   // =====================================================================
-  // v3.0 NEW: LANDSLIDES — NASA EONET
+  // LANDSLIDES — NASA EONET
   // =====================================================================
   transformLandslides(data) {
     console.log('⛰️ Processing NASA EONET landslide data...');
@@ -992,7 +1011,7 @@ class DisasterDataAggregator {
   }
 
   // =====================================================================
-  // v3.0 NEW: TSUNAMIS — NOAA Pacific Tsunami Warning Center (Atom XML)
+  // TSUNAMIS — NOAA Pacific Tsunami Warning Center
   // =====================================================================
   transformTsunamis(data) {
     console.log('🌊 Processing NOAA Tsunami alerts...');
@@ -1138,7 +1157,6 @@ class DisasterDataAggregator {
         ...(gdacs.features || [])
       ];
 
-      // STEP 1: Staleness gate
       const freshFloods = allFloods.filter(flood => {
         if (flood.toDate) {
           const toDate = new Date(flood.toDate);
@@ -1161,7 +1179,6 @@ class DisasterDataAggregator {
         return true;
       });
       
-      // STEP 2: Deduplicate
       const uniqueFloods = [];
       const seen = new Set();
       
@@ -1179,7 +1196,6 @@ class DisasterDataAggregator {
         }
       });
 
-      // STEP 3: Sort
       uniqueFloods.sort((a, b) => {
         const aActive = a.isActive !== false;
         const bActive = b.isActive !== false;
@@ -1235,7 +1251,7 @@ class DisasterDataAggregator {
       const response = await axios.get(url, {
         timeout: 30000,
         headers: {
-          'User-Agent': 'RealNow-DisasterTracker/3.0',
+          'User-Agent': 'RealNow-DisasterTracker/5.0',
           'Accept': 'application/json, text/csv, application/xml, */*'
         }
       });
@@ -1297,6 +1313,12 @@ class DisasterDataAggregator {
 // ====================
 
 const aggregator = new DisasterDataAggregator();
+
+// =====================================================================
+// v5: ENHANCE AGGREGATOR (circuit breaker, geo-dedup, Redis TTL)
+// =====================================================================
+enhancements.enhanceAggregator(aggregator, redis);
+aggregator.io = io; // Give aggregator reference to socket.io
 
 app.get('/api/data/:type', async (req, res) => {
   try {
@@ -1370,10 +1392,12 @@ app.get('/api/stats', async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
-    version: '3.0',
+    version: '5.0',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    memory: process.memoryUsage()
+    memory: process.memoryUsage(),
+    // v5: include circuit breaker status
+    circuitBreaker: enhancements.circuitBreaker.getStatus()
   });
 });
 
@@ -1406,7 +1430,6 @@ app.post('/api/refresh/:type', async (req, res) => {
   }
 });
 
-// v3.0 NEW: Get specific event by ID (for deep linking/sharing)
 app.get('/api/event/:id', async (req, res) => {
   const eventId = req.params.id;
   const types = [
@@ -1427,7 +1450,6 @@ app.get('/api/event/:id', async (req, res) => {
   res.status(404).json({ error: 'Event not found', id: eventId });
 });
 
-// v3.0 NEW: Historical data endpoint for timeline
 app.get('/api/history/:type', async (req, res) => {
   try {
     const cached = await redis.get(`data:${req.params.type}`);
@@ -1473,7 +1495,7 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log('═══════════════════════════════════════');
-  console.log('🌍 REALNOW DISASTER TRACKER v3.0');
+  console.log('🌍 REALNOW DISASTER TRACKER v5.0');
   console.log('═══════════════════════════════════════');
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🔥 Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -1481,13 +1503,24 @@ server.listen(PORT, () => {
   console.log('🌊 Flood staleness: 3d NASA / 30d ReliefWeb / 7d GDACS / 14d merge ceiling');
   console.log('🌋 Volcano monitoring: NASA EONET');
   console.log('🌀 GDACS: Fixed filtering for mixed data bug');
-  console.log('⛰️  NEW: Landslide monitoring (NASA EONET)');
-  console.log('🌊 NEW: Tsunami alerts (NOAA PTWC)');
-  console.log('🔗 NEW: Deep link sharing (/api/event/:id)');
-  console.log('⏱️  NEW: Historical timeline (/api/history/:type)');
+  console.log('⛰️  Landslide monitoring (NASA EONET)');
+  console.log('🌊 Tsunami alerts (NOAA PTWC)');
+  console.log('🔗 Deep link sharing (/api/event/:id)');
+  console.log('⏱️  Historical timeline (/api/history/:type)');
+  console.log('──── v5.0 ENHANCEMENTS ────');
+  console.log('⚡ Circuit breaker: Exponential backoff on source failures');
+  console.log('🔒 Rate limiting: All API routes protected');
+  console.log('🔄 Geo-deduplication: Cross-source duplicate removal');
+  console.log('💾 Redis TTL: 2hr safety net on all cached data');
+  console.log('👤 Preferences API: /api/preferences (anonymous UUID)');
+  console.log('📧 Email digest: Daily/weekly watch area summaries');
+  console.log('📊 Circuit status: /api/circuit-status');
   console.log('═══════════════════════════════════════\n');
   
   aggregator.startScheduledFetching();
+
+  // v5: Start background services (digest scheduler)
+  enhancements.startServices(redis);
 });
 
 process.on('SIGTERM', async () => {
