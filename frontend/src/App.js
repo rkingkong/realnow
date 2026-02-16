@@ -218,6 +218,30 @@ const TIME_FILTERS = [
 // =====================================================================
 // HELPER FUNCTIONS
 // =====================================================================
+
+const getRelativeTime = (timestamp) => {
+  if (!timestamp) return '';
+  const now = Date.now();
+  const t = typeof timestamp === 'number' ? (timestamp < 1e12 ? timestamp * 1000 : timestamp) : new Date(timestamp).getTime();
+  const diff = now - t;
+  if (diff < 0) return 'upcoming';
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return new Date(t).toLocaleDateString();
+};
+
+// ─── HELPER: Severity color class ─────────────────────────────────
+const getSeverityColorClass = (level) => {
+  if (!level) return '';
+  const l = level.toLowerCase();
+  if (l.includes('extreme') || l.includes('red') || l === 'category 5') return 'sev-extreme';
+  if (l.includes('severe') || l.includes('orange') || l === 'category 4' || l === 'category 3') return 'sev-severe';
+  if (l.includes('moderate') || l.includes('yellow') || l === 'category 2' || l === 'category 1') return 'sev-moderate';
+  return 'sev-minor';
+};
+
 const formatNumber = (num) => {
   if (!num) return '0';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -608,13 +632,13 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
   }, [item, type, onClose]);
 
   if (!item || !type) return null;
-  
+
   const config = DISASTER_CONFIG[type];
   const severity = config?.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
   const coords = getEventCoords(item);
   const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
   const shareUrl = buildShareUrl(item, type);
-  
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       if (onShare) onShare('Link copied!');
@@ -628,7 +652,7 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
       if (onShare) onShare('Link copied!');
     });
   };
-  
+
   return (
     <div className="detail-drawer" role="dialog" aria-label="Event details">
       <div className="drawer-header">
@@ -643,112 +667,494 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         </div>
         <button className="drawer-close" onClick={onClose} aria-label="Close details">✕</button>
       </div>
-      
+
       <div className="drawer-body">
+
+        {/* ═══ EARTHQUAKES ═══ */}
         {type === 'earthquakes' && (
-          <div className="drawer-section">
-            <div className="drawer-row"><span>Magnitude</span><strong>M{item.magnitude?.toFixed(1)}</strong></div>
-            <div className="drawer-row"><span>Depth</span><strong>{item.depth?.toFixed(1)} km</strong></div>
-            {item.felt > 0 && <div className="drawer-row"><span>Felt Reports</span><strong>{item.felt}</strong></div>}
-            {item.alert && <div className="drawer-row"><span>Alert Level</span><strong className={`alert-${item.alert}`}>{item.alert}</strong></div>}
-            {item.tsunami === 1 && <div className="drawer-alert tsunami">⚠️ TSUNAMI WARNING ISSUED</div>}
-            {item.time && <div className="drawer-row"><span>Time</span><strong>{formatTime(item.time)}</strong></div>}
-          </div>
-        )}
-        
-        {type === 'wildfires' && (
-          <div className="drawer-section">
-            <div className={`drawer-status-badge ${item.isActive ? 'active' : 'contained'}`}>
-              {item.isActive ? '🔥 ACTIVELY BURNING' : item.status === 'just_ended' ? '🟡 JUST CONTAINED' : '✅ CONTAINED'}
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📊 Seismic Data</h4>
+              <div className="drawer-row"><span>Magnitude</span><strong>M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</strong></div>
+              <div className="drawer-row"><span>Depth</span><strong>{item.depth?.toFixed(1)} km — {item.depthClass || ''}</strong></div>
+              {item.significance > 0 && <div className="drawer-row"><span>Significance</span><strong>{item.significance} / 1000</strong></div>}
+              {item.gap && <div className="drawer-row"><span>Azimuthal Gap</span><strong>{item.gap.toFixed(0)}°</strong></div>}
+              {item.rms && <div className="drawer-row"><span>RMS Residual</span><strong>{item.rms.toFixed(2)} sec</strong></div>}
+              {item.nst && <div className="drawer-row"><span>Stations Used</span><strong>{item.nst}</strong></div>}
             </div>
-            {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
-            {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
-            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-            {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
-          </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🏘️ Impact Assessment</h4>
+              {item.mmi > 0 && (
+                <div className="drawer-row">
+                  <span>Max Shaking (MMI)</span>
+                  <strong className={getSeverityColorClass(item.intensityDesc)}>
+                    {item.mmi.toFixed(1)} — {item.intensityDesc || 'Unknown'}
+                  </strong>
+                </div>
+              )}
+              {item.cdi > 0 && (
+                <div className="drawer-row"><span>Community Intensity</span><strong>{item.cdi.toFixed(1)}</strong></div>
+              )}
+              {item.felt > 0 && <div className="drawer-row"><span>Felt Reports</span><strong>{formatNumber(item.felt)} people</strong></div>}
+              {item.alert && (
+                <div className="drawer-row">
+                  <span>PAGER Alert</span>
+                  <strong className={`alert-${item.alert}`}>{item.alert.toUpperCase()}</strong>
+                </div>
+              )}
+              {item.tsunami === 1 && <div className="drawer-alert tsunami">⚠️ TSUNAMI WARNING ISSUED</div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">ℹ️ Details</h4>
+              <div className="drawer-row"><span>Status</span><strong>{item.status === 'reviewed' ? '✅ Reviewed' : '⏳ Automatic'}</strong></div>
+              {item.net && <div className="drawer-row"><span>Network</span><strong>{item.net.toUpperCase()}</strong></div>}
+              {item.time && <div className="drawer-row"><span>Time</span><strong>{formatTime(item.time)} ({getRelativeTime(item.time)})</strong></div>}
+              {item.updated && <div className="drawer-row"><span>Updated</span><strong>{getRelativeTime(item.updated)}</strong></div>}
+            </div>
+          </>
         )}
-        
-        {type === 'floods' && (
-          <div className="drawer-section">
-            {floodInfo?.isActive ? (
-              <div className="drawer-status-badge active">🔴 ACTIVE — Day {floodInfo.daysActive}</div>
-            ) : (
-              <div className="drawer-status-badge contained">⚪ {floodInfo?.statusLabel || 'Ended'}</div>
-            )}
-            {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
-            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-            {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
-            {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
-          </div>
-        )}
-        
+
+        {/* ═══ CYCLONES / HURRICANES / TYPHOONS ═══ */}
         {type === 'cyclones' && (
-          <div className="drawer-section">
-            {item.stormType && <div className="drawer-row"><span>Type</span><strong>{item.stormType}</strong></div>}
-            {item.windSpeed && <div className="drawer-row"><span>Wind Speed</span><strong>{item.windSpeed} km/h</strong></div>}
-            {item.category && <div className="drawer-row"><span>Category</span><strong>{item.category}</strong></div>}
-          </div>
-        )}
-        {type === 'droughts' && (
-          <div className="drawer-section">
-            <div className={`drawer-status-badge ${item.isActive !== false ? 'active' : 'contained'}`}>
-              {item.isActive !== false ? '🏜️ ACTIVE DROUGHT' : item.status === 'just_ended' ? '🟡 RECENTLY ENDED' : '✅ ENDED'}
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🌀 Storm Classification</h4>
+              <div className="drawer-row"><span>Type</span><strong>{item.stormType}</strong></div>
+              <div className="drawer-row"><span>Category</span><strong>{item.category}</strong></div>
+              {item.saffirSimpson && (
+                <div className="drawer-row"><span>Saffir-Simpson</span><strong>{item.saffirSimpson}</strong></div>
+              )}
+              {item.alertLevel && (
+                <div className="drawer-row">
+                  <span>GDACS Alert</span>
+                  <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel} {item.alertScore ? `(${item.alertScore.toFixed(1)})` : ''}</strong>
+                </div>
+              )}
+              <div className={`drawer-status-badge ${item.isActive ? 'active' : 'contained'}`}>
+                {item.isActive ? '🔴 ACTIVE STORM' : '⚪ DISSIPATED'}
+              </div>
             </div>
-            {item.alertLevel && <div className="drawer-row"><span>Alert Level</span><strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong></div>}
-            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-            {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{item.affectedArea.toLocaleString()} km²</strong></div>}
-            {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{item.population.toLocaleString()}</strong></div>}
-            {item.duration > 0 && <div className="drawer-row"><span>Duration</span><strong>{item.duration} days</strong></div>}
-            {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
-            {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
-            {item.daysSinceStart !== null && item.isActive !== false && (
-              <div className="drawer-row"><span>Active For</span><strong>{item.daysSinceStart} days</strong></div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">💨 Wind & Pressure</h4>
+              {item.windSpeed > 0 && (
+                <div className="drawer-row"><span>Wind Speed</span><strong>{item.windSpeed} km/h ({Math.round(item.windSpeed * 0.621)} mph)</strong></div>
+              )}
+              {item.beaufort > 0 && <div className="drawer-row"><span>Beaufort Scale</span><strong>Force {item.beaufort}</strong></div>}
+              {item.pressure > 0 && (
+                <div className="drawer-row"><span>Pressure</span><strong>{item.pressure} hPa {item.pressureDesc ? `— ${item.pressureDesc}` : ''}</strong></div>
+              )}
+              {item.maxWindRadius > 0 && <div className="drawer-row"><span>Max Wind Radius</span><strong>{item.maxWindRadius} km</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🧭 Movement & Duration</h4>
+              {item.movementDesc && <div className="drawer-row"><span>Movement</span><strong>{item.movementDesc}</strong></div>}
+              {!item.movementDesc && item.direction > 0 && (
+                <div className="drawer-row"><span>Heading</span><strong>{item.direction}° at {item.speed} km/h</strong></div>
+              )}
+              {item.durationDays && <div className="drawer-row"><span>Duration</span><strong>{item.durationDays} day{item.durationDays > 1 ? 's' : ''}</strong></div>}
+              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🏘️ Impact</h4>
+              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              {item.affectedCountries?.length > 1 && (
+                <div className="drawer-row"><span>Affected Countries</span><strong>{item.affectedCountries.join(', ')}</strong></div>
+              )}
+              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+            </div>
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ FLOODS ═══ */}
+        {type === 'floods' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🌊 Flood Status</h4>
+              {floodInfo?.isActive ? (
+                <div className="drawer-status-badge active">🔴 ACTIVE — Day {floodInfo.daysActive}</div>
+              ) : (
+                <div className="drawer-status-badge contained">⚪ {floodInfo?.statusLabel || 'Ended'}</div>
+              )}
+              {item.alertLevel && (
+                <div className="drawer-row">
+                  <span>GDACS Alert</span>
+                  <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel} {item.severityScore ? `(${item.severityScore.toFixed(1)})` : (item.alertScore ? `(${item.alertScore})` : '')}</strong>
+                </div>
+              )}
+              {item.severity && typeof item.severity === 'string' && <div className="drawer-row"><span>Severity</span><strong>{item.severity}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📊 Extent & Impact</h4>
+              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              {item.affectedCountries?.length > 1 && (
+                <div className="drawer-row"><span>Affected Countries</span><strong>{item.affectedCountries.join(', ')}</strong></div>
+              )}
+              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📅 Timeline</h4>
+              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              {item.durationDays && <div className="drawer-row"><span>Duration</span><strong>{item.durationDays} day{item.durationDays > 1 ? 's' : ''}</strong></div>}
+              {item.lastUpdate && <div className="drawer-row"><span>Last Update</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
+            </div>
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ WILDFIRES ═══ */}
+        {type === 'wildfires' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🔥 Fire Status</h4>
+              <div className={`drawer-status-badge ${item.isActive ? 'active' : 'contained'}`}>
+                {item.isActive ? '🔥 ACTIVELY BURNING' : item.status === 'just_ended' ? '🟡 JUST CONTAINED' : '✅ CONTAINED'}
+              </div>
+              {item.alertLevel && (
+                <div className="drawer-row">
+                  <span>GDACS Alert</span>
+                  <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong>
+                </div>
+              )}
+              {item.alertScore > 0 && <div className="drawer-row"><span>Alert Score</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📊 Extent & Impact</h4>
+              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📅 Timeline</h4>
+              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              {item.daysSinceStart !== null && item.isActive && <div className="drawer-row"><span>Active For</span><strong>{item.daysSinceStart} days</strong></div>}
+              {item.lastUpdate && <div className="drawer-row"><span>Last Update</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
+            </div>
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ VOLCANOES ═══ */}
+        {type === 'volcanoes' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🌋 Volcanic Activity</h4>
+              <div className={`drawer-status-badge ${!item.isClosed ? 'active' : 'contained'}`}>
+                {!item.isClosed ? '🔴 ACTIVE' : '⚪ INACTIVE'}
+              </div>
+              {item.alertLevel && (
+                <div className="drawer-row">
+                  <span>Alert Level</span>
+                  <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong>
+                </div>
+              )}
+              {item.vei > 0 && <div className="drawer-row"><span>VEI (Explosivity)</span><strong>{item.vei} / 8</strong></div>}
+              {item.alertScore > 0 && <div className="drawer-row"><span>GDACS Score</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📍 Location & Impact</h4>
+              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              {item.elevation > 0 && <div className="drawer-row"><span>Elevation</span><strong>{formatNumber(item.elevation)} m</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📅 Timeline</h4>
+              {item.startDate && <div className="drawer-row"><span>First Observed</span><strong>{new Date(item.startDate).toLocaleDateString()}</strong></div>}
+              {item.lastObserved && <div className="drawer-row"><span>Last Observed</span><strong>{new Date(item.lastObserved).toLocaleDateString()} ({getRelativeTime(item.lastObserved)})</strong></div>}
+              {item.durationDays && <div className="drawer-row"><span>Duration</span><strong>{item.durationDays} day{item.durationDays > 1 ? 's' : ''}</strong></div>}
+              {item.geometryCount > 1 && <div className="drawer-row"><span>Observations</span><strong>{item.geometryCount} data points</strong></div>}
+              {item.closedDate && <div className="drawer-row"><span>Closed</span><strong>{new Date(item.closedDate).toLocaleDateString()}</strong></div>}
+            </div>
+
+            {item.sources?.length > 0 && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📚 Sources</h4>
+                {item.sources.map((src, i) => (
+                  <div key={i} className="drawer-row">
+                    <span>{src.id}</span>
+                    {src.url && <a href={src.url} target="_blank" rel="noopener noreferrer" className="drawer-link">View →</a>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ WEATHER ALERTS ═══ */}
+        {type === 'weather' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">⚠️ Alert Details</h4>
+              <div className={`drawer-status-badge ${item.severity === 'Extreme' || item.severity === 'Severe' ? 'active' : 'contained'}`}>
+                {item.severity === 'Extreme' ? '🔴' : item.severity === 'Severe' ? '🟠' : item.severity === 'Moderate' ? '🟡' : '🟢'} {item.severity} — {item.urgency}
+              </div>
+              <div className="drawer-row"><span>Event</span><strong>{item.event}</strong></div>
+              {item.certainty && <div className="drawer-row"><span>Certainty</span><strong>{item.certainty}</strong></div>}
+              {item.response && <div className="drawer-row"><span>Response</span><strong>{item.response}</strong></div>}
+              {item.status && <div className="drawer-row"><span>Status</span><strong>{item.status}</strong></div>}
+            </div>
+
+            {/* Threat Parameters */}
+            {(item.parameters?.maxWindGust || item.parameters?.maxHailSize || item.parameters?.tornadoDetection) && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">🌪️ Threat Parameters</h4>
+                {item.parameters.windThreat && <div className="drawer-row"><span>Wind Threat</span><strong>{item.parameters.windThreat}</strong></div>}
+                {item.parameters.maxWindGust && <div className="drawer-row"><span>Max Wind Gust</span><strong>{item.parameters.maxWindGust}</strong></div>}
+                {item.parameters.hailThreat && <div className="drawer-row"><span>Hail Threat</span><strong>{item.parameters.hailThreat}</strong></div>}
+                {item.parameters.maxHailSize && <div className="drawer-row"><span>Max Hail Size</span><strong>{item.parameters.maxHailSize}</strong></div>}
+                {item.parameters.tornadoDetection && <div className="drawer-row"><span>Tornado Detection</span><strong>{item.parameters.tornadoDetection}</strong></div>}
+                {item.parameters.thunderstormDamageThreat && <div className="drawer-row"><span>Storm Damage</span><strong>{item.parameters.thunderstormDamageThreat}</strong></div>}
+                {item.parameters.flashFloodDetection && <div className="drawer-row"><span>Flash Flood</span><strong>{item.parameters.flashFloodDetection}</strong></div>}
+                {item.parameters.flashFloodDamageThreat && <div className="drawer-row"><span>Flood Damage</span><strong>{item.parameters.flashFloodDamageThreat}</strong></div>}
+              </div>
+            )}
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📍 Area & Timing</h4>
+              {item.areas && <div className="drawer-row"><span>Areas</span><strong className="drawer-areas">{item.areas}</strong></div>}
+              {item.onset && <div className="drawer-row"><span>Onset</span><strong>{new Date(item.onset).toLocaleString()}</strong></div>}
+              {item.expires && <div className="drawer-row"><span>Expires</span><strong>{new Date(item.expires).toLocaleString()}</strong></div>}
+              {item.timeRemaining && <div className="drawer-row"><span>Time Left</span><strong className="text-orange">{item.timeRemaining}</strong></div>}
+              {item.sender && <div className="drawer-row"><span>Issued By</span><strong>{item.sender}</strong></div>}
+            </div>
+
+            {item.parameters?.nwsHeadline && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📢 Headline</h4>
+                <p className="drawer-description">{item.parameters.nwsHeadline}</p>
+              </div>
+            )}
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description drawer-description-long">{item.description}</p>
+              </div>
+            )}
+
+            {item.instruction && (
+              <div className="drawer-section drawer-instruction">
+                <h4 className="drawer-section-title">🛡️ Safety Instructions</h4>
+                <p className="drawer-description drawer-instruction-text">{item.instruction}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ DROUGHTS ═══ */}
+        {type === 'droughts' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🏜️ Drought Status</h4>
+              <div className={`drawer-status-badge ${item.isActive !== false ? 'active' : 'contained'}`}>
+                {item.isActive !== false ? '🏜️ ACTIVE DROUGHT' : item.status === 'just_ended' ? '🟡 RECENTLY ENDED' : '✅ ENDED'}
+              </div>
+              {item.alertLevel && (
+                <div className="drawer-row"><span>Alert Level</span><strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong></div>
+              )}
+              {item.severity && <div className="drawer-row"><span>Severity</span><strong>{item.severity}</strong></div>}
+              {item.alertScore > 0 && <div className="drawer-row"><span>GDACS Score</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📊 Extent & Impact</h4>
+              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              {item.affectedCountries?.length > 1 && (
+                <div className="drawer-row"><span>Affected Countries</span><strong>{item.affectedCountries.join(', ')}</strong></div>
+              )}
+              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📅 Timeline</h4>
+              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              {item.daysSinceStart !== null && item.isActive !== false && (
+                <div className="drawer-row"><span>Active For</span><strong>{item.daysSinceStart} days</strong></div>
+              )}
+              {item.duration > 0 && <div className="drawer-row"><span>Duration</span><strong>{item.duration} days</strong></div>}
+              {item.lastUpdate && <div className="drawer-row"><span>Last Update</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
+            </div>
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ LANDSLIDES ═══ */}
+        {type === 'landslides' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">⛰️ Landslide Details</h4>
+              {item.fatalities > 0 && <div className="drawer-row"><span>Fatalities</span><strong className="text-red">{item.fatalities}</strong></div>}
+              {item.trigger && <div className="drawer-row"><span>Trigger</span><strong>{item.trigger}</strong></div>}
+              {item.severity && <div className="drawer-row"><span>Severity</span><strong>{item.severity}</strong></div>}
+            </div>
+
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📍 Location</h4>
+              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              {item.date && <div className="drawer-row"><span>Date</span><strong>{new Date(item.date).toLocaleDateString()}</strong></div>}
+            </div>
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+
+            {item.sources?.length > 0 && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📚 Sources</h4>
+                {item.sources.slice(0, 3).map((s, i) => (
+                  <div key={i} className="drawer-row">
+                    <span>{s.id || 'Source'}</span>
+                    <a href={s.url} target="_blank" rel="noopener noreferrer" className="drawer-link">View →</a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ TSUNAMIS ═══ */}
+        {type === 'tsunamis' && (
+          <>
+            <div className="drawer-section">
+              <div className="drawer-alert tsunami">⚠️ {severity}</div>
+              {item.region && <div className="drawer-row"><span>Region</span><strong>{item.region}</strong></div>}
+              {item.date && <div className="drawer-row"><span>Time</span><strong>{new Date(item.date).toLocaleString()}</strong></div>}
+            </div>
+
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ SPACE WEATHER ═══ */}
+        {type === 'spaceweather' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">☀️ Space Weather</h4>
+              {item.currentKp && <div className="drawer-row"><span>Kp Index</span><strong>{item.currentKp}</strong></div>}
+            </div>
+            {item.description && (
+              <div className="drawer-section">
+                <h4 className="drawer-section-title">📝 Description</h4>
+                <p className="drawer-description">{item.description}</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ═══ FIRE HOTSPOTS ═══ */}
+        {type === 'fires' && (
+          <>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">🔥 Thermal Detection</h4>
+              <div className="drawer-row"><span>Brightness</span><strong>{item.brightness?.toFixed(1)} K</strong></div>
+              {item.frp > 0 && <div className="drawer-row"><span>Fire Radiative Power</span><strong>{item.frp.toFixed(1)} MW {item.intensity ? `— ${item.intensity}` : ''}</strong></div>}
+              {item.confidence && <div className="drawer-row"><span>Confidence</span><strong>{item.confidence}</strong></div>}
+              {item.satellite && <div className="drawer-row"><span>Satellite</span><strong>{item.satellite}</strong></div>}
+              {item.instrument && <div className="drawer-row"><span>Instrument</span><strong>{item.instrument}</strong></div>}
+              {(item.dayNight || item.daynight) && <div className="drawer-row"><span>Pass</span><strong>{(item.dayNight || item.daynight) === 'D' ? '☀️ Daytime' : '🌙 Nighttime'}</strong></div>}
+              {item.estimatedArea > 0 && <div className="drawer-row"><span>Est. Pixel Area</span><strong>{item.estimatedArea.toFixed(2)} km²</strong></div>}
+            </div>
+            <div className="drawer-section">
+              <h4 className="drawer-section-title">📅 Detection</h4>
+              {item.date && <div className="drawer-row"><span>Date</span><strong>{item.date}</strong></div>}
+              {item.time && <div className="drawer-row"><span>Time (UTC)</span><strong>{item.time}</strong></div>}
+            </div>
+          </>
+        )}
+
+        {/* ═══ COORDINATES (all types) ═══ */}
+        <div className="drawer-section">
+          <h4 className="drawer-section-title">📍 Coordinates</h4>
+          <div className="drawer-row">
+            <span>Location</span>
+            <strong>{coords ? `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}` : 'Unknown'}</strong>
+          </div>
+          <div className="drawer-row"><span>Source</span><strong>{item.source || 'GDACS'}</strong></div>
+        </div>
+
+        {/* ═══ EXTERNAL LINKS (all types) ═══ */}
+        {(item.url || item.link || item.web) && (
+          <div className="drawer-section">
+            <h4 className="drawer-section-title">🔗 External Links</h4>
+            {item.url && (
+              <a href={item.url} target="_blank" rel="noopener noreferrer" className="drawer-ext-link">
+                View on {item.source || 'Source'} →
+              </a>
+            )}
+            {item.link && item.link !== item.url && (
+              <a href={item.link} target="_blank" rel="noopener noreferrer" className="drawer-ext-link">
+                NASA EONET Page →
+              </a>
+            )}
+            {item.web && (
+              <a href={item.web} target="_blank" rel="noopener noreferrer" className="drawer-ext-link">
+                NWS Alert Page →
+              </a>
             )}
           </div>
         )}
-
-        {type === 'volcanoes' && (
-          <div className="drawer-section">
-            {item.alertLevel && <div className="drawer-row"><span>Alert</span><strong>{item.alertLevel}</strong></div>}
-            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-          </div>
-        )}
-
-        {type === 'landslides' && (
-          <div className="drawer-section">
-            {item.fatalities > 0 && <div className="drawer-row"><span>Fatalities</span><strong className="text-red">{item.fatalities}</strong></div>}
-            {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-            {item.trigger && <div className="drawer-row"><span>Trigger</span><strong>{item.trigger}</strong></div>}
-          </div>
-        )}
-
-        {type === 'tsunamis' && (
-          <div className="drawer-section">
-            <div className="drawer-alert tsunami">⚠️ {severity}</div>
-            {item.region && <div className="drawer-row"><span>Region</span><strong>{item.region}</strong></div>}
-          </div>
-        )}
-        
-        <div className="drawer-section coords-section">
-          {coords && (
-            <div className="drawer-row"><span>Coordinates</span><strong>{coords.lat.toFixed(4)}, {coords.lon.toFixed(4)}</strong></div>
-          )}
-          {item.description && <div className="drawer-description">{item.description}</div>}
-          {item.source && <div className="drawer-row faded"><span>Source</span><strong>{item.source}</strong></div>}
-          {item.sources?.length > 0 && (
-            <div className="drawer-links">
-              {item.sources.slice(0, 3).map((s, i) => (
-                <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="drawer-source-link">
-                  {s.id || 'Source'} ↗
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
-      
+
       <div className="drawer-footer">
-        <button className="drawer-share-btn" onClick={handleCopyLink}>🔗 Copy Share Link</button>
+        <button className="drawer-share-btn" onClick={handleCopyLink}>🔗 Copy Link</button>
       </div>
     </div>
   );
@@ -1095,7 +1501,7 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
   const severity = config.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
   const severityClass = `severity-${severity.toLowerCase().replace(/ /g, '-')}`;
   const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
-  
+
   return (
     <div className="popup-content enhanced">
       <div className="popup-header">
@@ -1108,13 +1514,27 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
         </div>
       </div>
       <div className="popup-details">
+
         {type === 'earthquakes' && (
           <>
-            <div className="detail-row"><strong>Magnitude:</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)}</span></div>
-            <div className="detail-row"><strong>Depth:</strong><span className="detail-value">{item.depth?.toFixed(1)} km</span></div>
+            <div className="detail-row"><strong>Magnitude:</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</span></div>
+            <div className="detail-row"><strong>Depth:</strong><span className="detail-value">{item.depth?.toFixed(1)} km — {item.depthClass || ''}</span></div>
+            {item.mmi > 0 && <div className="detail-row"><strong>Shaking:</strong><span className="detail-value">{item.intensityDesc || `MMI ${item.mmi.toFixed(1)}`}</span></div>}
+            {item.felt > 0 && <div className="detail-row"><strong>Felt:</strong><span className="detail-value">{item.felt} reports</span></div>}
             {item.tsunami === 1 && <div className="alert-box tsunami">⚠️ TSUNAMI WARNING</div>}
           </>
         )}
+
+        {type === 'cyclones' && (
+          <>
+            <div className="detail-row"><strong>Type:</strong><span className="detail-value">{item.stormType} · {item.category}</span></div>
+            {item.windSpeed > 0 && <div className="detail-row"><strong>Wind:</strong><span className="detail-value highlight">{item.windSpeed} km/h</span></div>}
+            {item.pressure > 0 && <div className="detail-row"><strong>Pressure:</strong><span className="detail-value">{item.pressure} hPa</span></div>}
+            {item.movementDesc && <div className="detail-row"><strong>Track:</strong><span className="detail-value">{item.movementDesc}</span></div>}
+            {item.population > 0 && <div className="detail-row"><strong>Pop. at Risk:</strong><span className="detail-value">{formatNumber(item.population)}</span></div>}
+          </>
+        )}
+
         {type === 'wildfires' && (
           <>
             <div style={{
@@ -1130,33 +1550,58 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
             {item.affectedArea > 0 && <div className="detail-row"><strong>Area:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
           </>
         )}
+
         {type === 'floods' && (
           <>
-            {floodInfo?.isActive && <div className="active-flood-badge"><span className="badge-icon">🔴</span><span className="badge-text">ACTIVE - Day {floodInfo.daysActive}</span></div>}
+            {floodInfo?.isActive ? (
+              <div className="active-flood-badge"><span className="badge-icon">🔴</span><span className="badge-text">ACTIVE — Day {floodInfo.daysActive}</span></div>
+            ) : (
+              <div className="detail-row"><strong>Status:</strong><span className="detail-value">{floodInfo?.statusLabel || 'Ended'}</span></div>
+            )}
             <div className="detail-row"><strong>Alert:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
             {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
+            {item.population > 0 && <div className="detail-row"><strong>Pop. at Risk:</strong><span className="detail-value">{formatNumber(item.population)}</span></div>}
+            {item.affectedArea > 0 && <div className="detail-row"><strong>Area:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
           </>
         )}
-        {type === 'cyclones' && (
-          <>
-            {item.stormType && <div className="detail-row"><strong>Type:</strong><span className="detail-value">{item.stormType}</span></div>}
-            {item.windSpeed && <div className="detail-row"><strong>Wind:</strong><span className="detail-value highlight">{item.windSpeed} km/h</span></div>}
-          </>
-        )}
+
         {type === 'volcanoes' && (
           <>
+            <div className="detail-row"><strong>Status:</strong><span className={`detail-value ${!item.isClosed ? 'highlight' : ''}`}>{!item.isClosed ? '🔴 Active' : '⚪ Inactive'}</span></div>
             <div className="detail-row"><strong>Alert:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
             {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
           </>
         )}
+
+        {type === 'weather' && (
+          <>
+            <div className="detail-row"><strong>Severity:</strong><span className="detail-value">{item.severity} · {item.urgency}</span></div>
+            {item.timeRemaining && <div className="detail-row"><strong>Time Left:</strong><span className="detail-value highlight">{item.timeRemaining}</span></div>}
+          </>
+        )}
+
         {type === 'landslides' && (
           <>
             {item.fatalities > 0 && <div className="detail-row"><strong>Fatalities:</strong><span className="detail-value highlight">{item.fatalities}</span></div>}
             {item.trigger && <div className="detail-row"><strong>Trigger:</strong><span className="detail-value">{item.trigger}</span></div>}
           </>
         )}
+
         {type === 'tsunamis' && <div className="alert-box tsunami">⚠️ {severity}</div>}
+
+        {type === 'fires' && (
+          <>
+            {item.frp > 0 && <div className="detail-row"><strong>FRP:</strong><span className="detail-value">{item.frp.toFixed(1)} MW — {item.intensity || ''}</span></div>}
+            {item.satellite && <div className="detail-row"><strong>Satellite:</strong><span className="detail-value">{item.satellite}</span></div>}
+          </>
+        )}
       </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '11px' }}>
+        {item.country && <span style={{ color: 'rgba(255,255,255,0.5)' }}>📍 {item.country}</span>}
+        <span style={{ color: 'rgba(0,204,255,0.5)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{item.source || 'GDACS'}</span>
+      </div>
+
       <button className="popup-detail-btn" onClick={() => onOpenDrawer(item, type)}>View Full Details →</button>
     </div>
   );

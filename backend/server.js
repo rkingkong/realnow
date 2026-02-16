@@ -258,135 +258,177 @@ class DisasterDataAggregator {
   // ===================
 
   transformUSGSEarthquakes(data) {
-    if (!data?.features) {
-      console.log('No earthquake data received');
-      return null;
+      if (!data?.features) {
+        console.log('No earthquake data received');
+        return null;
+      }
+
+      const earthquakes = data.features
+        .filter(f => f.properties.mag >= 2.5 && f.geometry?.coordinates?.length >= 2)
+        .map(f => {
+          const p = f.properties;
+          const depth = f.geometry.coordinates[2];
+
+          // Classify depth
+          let depthClass = 'Shallow';
+          if (depth >= 300) depthClass = 'Deep';
+          else if (depth >= 70) depthClass = 'Intermediate';
+
+          // Describe intensity from MMI
+          let intensityDesc = '';
+          const mmi = p.mmi;
+          if (mmi >= 10) intensityDesc = 'Extreme';
+          else if (mmi >= 8) intensityDesc = 'Severe';
+          else if (mmi >= 6) intensityDesc = 'Strong';
+          else if (mmi >= 4) intensityDesc = 'Light';
+          else if (mmi >= 2) intensityDesc = 'Weak';
+          else if (mmi > 0) intensityDesc = 'Not Felt';
+
+          return {
+            id: f.id,
+            type: 'earthquake',
+            magnitude: p.mag,
+            place: p.place,
+            time: p.time,
+            updated: p.updated,
+            coordinates: f.geometry.coordinates,
+            depth: depth,
+            felt: p.felt || 0,
+            cdi: p.cdi || null,
+            mmi: p.mmi || null,
+            alert: p.alert,
+            status: p.status || 'automatic',
+            tsunami: p.tsunami || 0,
+            significance: p.sig,
+            source: 'USGS',
+            url: p.url || '',
+            // ── NEW v5.1 FIELDS ──
+            magType: p.magType || '',
+            title: p.title || '',
+            nst: p.nst || null,
+            rms: p.rms || null,
+            gap: p.gap || null,
+            net: p.net || '',
+            types: p.types || '',
+            depthClass: depthClass,
+            intensityDesc: intensityDesc
+          };
+        })
+        .sort((a, b) => b.magnitude - a.magnitude)
+        .slice(0, 500);
+
+      console.log(`✅ Processed ${earthquakes.length} earthquakes from USGS`);
+
+      return {
+        type: 'earthquakes',
+        timestamp: new Date().toISOString(),
+        count: earthquakes.length,
+        features: earthquakes
+      };
     }
-
-    const earthquakes = data.features
-      .filter(f => f.properties.mag >= 2.5 && f.geometry?.coordinates?.length >= 2)
-      .map(f => ({
-        id: f.id,
-        type: 'earthquake',
-        magnitude: f.properties.mag,
-        place: f.properties.place,
-        time: f.properties.time,
-        updated: f.properties.updated,
-        coordinates: f.geometry.coordinates,
-        depth: f.geometry.coordinates[2],
-        felt: f.properties.felt || 0,
-        cdi: f.properties.cdi || 0,
-        mmi: f.properties.mmi || 0,
-        alert: f.properties.alert,
-        status: f.properties.status,
-        tsunami: f.properties.tsunami || 0,
-        significance: f.properties.sig,
-        source: 'USGS',
-        url: f.properties.url
-      }))
-      .sort((a, b) => b.magnitude - a.magnitude)
-      .slice(0, 500);
-
-    console.log(`✅ Processed ${earthquakes.length} earthquakes from USGS`);
-    
-    return {
-      type: 'earthquakes',
-      timestamp: new Date().toISOString(),
-      count: earthquakes.length,
-      features: earthquakes
-    };
-  }
 
   transformNASAFires(csvData) {
-    console.log('🔥 Processing NASA FIRMS fires...');
-    
-    if (!csvData || typeof csvData !== 'string') {
-      console.log('❌ No fire CSV data received');
-      return null;
-    }
+      console.log('🔥 Processing NASA FIRMS fires...');
 
-    const lines = csvData.split('\n').filter(line => line.trim());
-    if (lines.length <= 1) {
-      console.log('❌ No fire data lines found');
-      return null;
-    }
+      if (!csvData || typeof csvData !== 'string') {
+        console.log('❌ No fire CSV data received');
+        return null;
+      }
 
-    console.log(`📊 NASA FIRMS: Processing ${lines.length - 1} total fires`);
+      const lines = csvData.split('\n').filter(line => line.trim());
+      if (lines.length <= 1) {
+        console.log('❌ No fire data lines found');
+        return null;
+      }
 
-    const allFires = [];
-    
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',');
-      if (values.length >= 13) {
-        const lat = parseFloat(values[0]);
-        const lon = parseFloat(values[1]);
-        const brightness = parseFloat(values[2]);
-        const frp = parseFloat(values[12]) || 0;
-        
-        if (!isNaN(lat) && !isNaN(lon)) {
-          let region = 'Other';
-          if (lon > -170 && lon < -30) region = 'Americas';
-          else if (lon > -25 && lon < 45 && lat > 35 && lat < 71) region = 'Europe';
-          else if (lon > -20 && lon < 52 && lat > -35 && lat < 37) region = 'Africa';
-          else if (lon > 45 && lon < 180 && lat > -10 && lat < 77) region = 'Asia';
-          else if (lon > 110 && lon < 160 && lat > -50 && lat < -10) region = 'Australia';
-          
-          allFires.push({
-            id: `fire_${i}_${Date.now()}`,
-            type: 'fire',
-            latitude: lat,
-            longitude: lon,
-            coordinates: [lon, lat],
-            brightness: brightness,
-            scan: parseFloat(values[3]),
-            track: parseFloat(values[4]),
-            date: values[5],
-            time: values[6],
-            satellite: values[7],
-            confidence: values[9],
-            version: values[10],
-            bright_t31: parseFloat(values[11]),
-            frp: frp,
-            daynight: values[13] || 'D',
-            source: 'NASA_FIRMS',
-            intensity: this.calculateFireIntensity(frp, brightness),
-            region: region
-          });
+      console.log(`📊 NASA FIRMS: Processing ${lines.length - 1} total fires`);
+
+      const allFires = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',');
+        if (values.length >= 13) {
+          const lat = parseFloat(values[0]);
+          const lon = parseFloat(values[1]);
+          const brightness = parseFloat(values[2]);
+          const frp = parseFloat(values[12]) || 0;
+          const scan = parseFloat(values[3]) || 0;
+          const track = parseFloat(values[4]) || 0;
+
+          if (!isNaN(lat) && !isNaN(lon)) {
+            let region = 'Other';
+            if (lon > -170 && lon < -30) region = 'Americas';
+            else if (lon > -25 && lon < 45 && lat > 35 && lat < 71) region = 'Europe';
+            else if (lon > -20 && lon < 52 && lat > -35 && lat < 37) region = 'Africa';
+            else if (lon > 45 && lon < 180 && lat > -10 && lat < 77) region = 'Asia';
+            else if (lon > 110 && lon < 160 && lat > -50 && lat < -10) region = 'Australia';
+
+            // ── Intensity classification from FRP ──
+            let intensity = 'Low';
+            if (frp >= 100) intensity = 'Extreme';
+            else if (frp >= 50) intensity = 'High';
+            else if (frp >= 20) intensity = 'Moderate';
+
+            allFires.push({
+              id: `fire_${i}_${Date.now()}`,
+              type: 'fire',
+              latitude: lat,
+              longitude: lon,
+              coordinates: [lon, lat],
+              brightness: brightness,
+              scan: scan,
+              track: track,
+              date: values[5],
+              time: values[6],
+              satellite: values[7],
+              confidence: values[9],
+              version: values[10],
+              bright_t31: parseFloat(values[11]),
+              frp: frp,
+              daynight: values[13] || 'D',
+              source: 'NASA_FIRMS',
+              region: region,
+              // ── NEW v5.1 FIELDS ──
+              instrument: values[8] || '',
+              intensity: intensity,
+              estimatedArea: scan * track,
+              dayNight: values[13] || 'D'
+            });
+          }
         }
       }
+
+      const byRegion = {};
+      allFires.forEach(fire => {
+        if (!byRegion[fire.region]) byRegion[fire.region] = [];
+        byRegion[fire.region].push(fire);
+      });
+
+      const maxFires = 2000;
+      const sampledFires = [];
+      const totalFires = allFires.length;
+
+      Object.entries(byRegion).forEach(([region, regionFires]) => {
+        const proportion = regionFires.length / totalFires;
+        const toTake = Math.ceil(proportion * maxFires);
+        regionFires.sort((a, b) => (b.frp || 0) - (a.frp || 0));
+        const selected = regionFires.slice(0, toTake);
+        sampledFires.push(...selected);
+      });
+
+      sampledFires.sort((a, b) => (b.frp || 0) - (a.frp || 0));
+      const finalFires = sampledFires.slice(0, maxFires);
+
+      console.log(`✅ Processed ${finalFires.length} fires from NASA FIRMS (sampled from ${allFires.length} total)`);
+
+      return {
+        type: 'fires',
+        timestamp: new Date().toISOString(),
+        count: finalFires.length,
+        features: finalFires,
+        totalAvailable: allFires.length
+      };
     }
-
-    const byRegion = {};
-    allFires.forEach(fire => {
-      if (!byRegion[fire.region]) byRegion[fire.region] = [];
-      byRegion[fire.region].push(fire);
-    });
-
-    const maxFires = 2000;
-    const sampledFires = [];
-    const totalFires = allFires.length;
-    
-    Object.entries(byRegion).forEach(([region, regionFires]) => {
-      const proportion = regionFires.length / totalFires;
-      const toTake = Math.ceil(proportion * maxFires);
-      regionFires.sort((a, b) => (b.frp || 0) - (a.frp || 0));
-      const selected = regionFires.slice(0, toTake);
-      sampledFires.push(...selected);
-    });
-
-    sampledFires.sort((a, b) => (b.frp || 0) - (a.frp || 0));
-    const finalFires = sampledFires.slice(0, maxFires);
-
-    console.log(`✅ Processed ${finalFires.length} fires from NASA FIRMS (sampled from ${allFires.length} total)`);
-    
-    return {
-      type: 'fires',
-      timestamp: new Date().toISOString(),
-      count: finalFires.length,
-      features: finalFires,
-      totalAvailable: allFires.length
-    };
-  }
 
   calculateFireIntensity(frp, brightness) {
     if (frp > 500) return 'extreme';
@@ -397,51 +439,85 @@ class DisasterDataAggregator {
   }
 
   transformNOAAWeather(data) {
-    if (!data?.features) {
-      console.log('No weather data received');
-      return null;
-    }
+      if (!data?.features) {
+        console.log('No weather data received');
+        return null;
+      }
 
-    const alerts = data.features
-      .filter(alert => alert.properties && alert.geometry)
-      .map(alert => {
-        let coordinates = [0, 0];
-        if (alert.geometry?.coordinates?.length > 0) {
-          if (alert.geometry.type === 'Polygon' && alert.geometry.coordinates[0]?.length > 0) {
-            coordinates = alert.geometry.coordinates[0][0];
-          } else if (alert.geometry.type === 'Point') {
-            coordinates = alert.geometry.coordinates;
+      const now = new Date();
+
+      const alerts = data.features
+        .filter(alert => alert.properties && alert.geometry)
+        .map(alert => {
+          const p = alert.properties;
+          let coordinates = [0, 0];
+          if (alert.geometry?.coordinates?.length > 0) {
+            if (alert.geometry.type === 'Polygon' && alert.geometry.coordinates[0]?.length > 0) {
+              coordinates = alert.geometry.coordinates[0][0];
+            } else if (alert.geometry.type === 'Point') {
+              coordinates = alert.geometry.coordinates;
+            }
           }
-        }
 
-        return {
-          id: alert.id,
-          type: 'weather',
-          severity: alert.properties.severity,
-          urgency: alert.properties.urgency,
-          event: alert.properties.event,
-          headline: alert.properties.headline,
-          description: alert.properties.description?.substring(0, 500),
-          instruction: alert.properties.instruction?.substring(0, 500),
-          areas: alert.properties.areaDesc,
-          coordinates: coordinates,
-          onset: alert.properties.onset,
-          expires: alert.properties.expires,
-          source: 'NOAA',
-          category: this.categorizeWeatherEvent(alert.properties.event)
-        };
-      })
-      .slice(0, 500);
+          // Calculate time remaining
+          let timeRemaining = '';
+          if (p.expires) {
+            const diff = new Date(p.expires) - now;
+            if (diff > 0) {
+              const hrs = Math.floor(diff / 3600000);
+              const mins = Math.floor((diff % 3600000) / 60000);
+              timeRemaining = hrs > 0 ? `${hrs}h ${mins}m remaining` : `${mins}m remaining`;
+            }
+          }
 
-    console.log(`✅ Processed ${alerts.length} weather alerts from NOAA`);
-    
-    return {
-      type: 'weather',
-      timestamp: new Date().toISOString(),
-      count: alerts.length,
-      features: alerts
-    };
-  }
+          return {
+            id: alert.id,
+            type: 'weather',
+            severity: p.severity,
+            urgency: p.urgency,
+            event: p.event,
+            headline: p.headline,
+            description: p.description?.substring(0, 800),
+            areas: p.areaDesc,
+            coordinates: coordinates,
+            onset: p.onset,
+            expires: p.expires,
+            source: 'NOAA',
+            category: this.categorizeWeatherEvent(p.event),
+            // ── NEW v5.1 FIELDS ──
+            instruction: p.instruction?.substring(0, 800) || '',
+            effective: p.effective || null,
+            certainty: p.certainty || '',
+            sender: p.senderName || '',
+            web: p.web || '',
+            response: p.response || '',
+            timeRemaining: timeRemaining,
+            status: p.status || '',
+            messageType: p.messageType || '',
+            parameters: {
+              nwsHeadline: p.parameters?.NWSheadline?.[0] || '',
+              windThreat: p.parameters?.windThreat?.[0] || '',
+              maxWindGust: p.parameters?.maxWindGust?.[0] || '',
+              hailThreat: p.parameters?.hailThreat?.[0] || '',
+              maxHailSize: p.parameters?.maxHailSize?.[0] || '',
+              tornadoDetection: p.parameters?.tornadoDetection?.[0] || '',
+              thunderstormDamageThreat: p.parameters?.thunderstormDamageThreat?.[0] || '',
+              flashFloodDetection: p.parameters?.flashFloodDetection?.[0] || '',
+              flashFloodDamageThreat: p.parameters?.flashFloodDamageThreat?.[0] || '',
+            }
+          };
+        })
+        .slice(0, 500);
+
+      console.log(`✅ Processed ${alerts.length} weather alerts from NOAA`);
+
+      return {
+        type: 'weather',
+        timestamp: new Date().toISOString(),
+        count: alerts.length,
+        features: alerts
+      };
+    }
 
   categorizeWeatherEvent(event) {
     const eventLower = (event || '').toLowerCase();
@@ -459,40 +535,63 @@ class DisasterDataAggregator {
   }
 
   transformEONETVolcanoes(data) {
-    if (!data?.events) {
-      console.log('No EONET volcano data received');
-      return null;
+      if (!data?.events) {
+        console.log('No EONET volcano data received');
+        return null;
+      }
+
+      const volcanoes = data.events.map(event => {
+        const latestGeometry = event.geometry?.[0] || {};
+        const coords = latestGeometry.coordinates || [0, 0];
+
+        // Count geometries to estimate activity duration
+        const geometryCount = event.geometry?.length || 0;
+        const firstDate = event.geometry?.[event.geometry.length - 1]?.date;
+        const lastDate = event.geometry?.[0]?.date;
+        let durationDays = null;
+        if (firstDate && lastDate) {
+          durationDays = Math.max(1, Math.round((new Date(lastDate) - new Date(firstDate)) / 86400000));
+        }
+
+        return {
+          id: `eonet_${event.id}`,
+          type: 'volcano',
+          name: event.title,
+          coordinates: coords,
+          latitude: coords[1],
+          longitude: coords[0],
+          status: event.closed ? 'closed' : 'active',
+          category: event.categories?.[0]?.title || 'Volcanoes',
+          date: latestGeometry.date || new Date().toISOString(),
+          alertLevel: event.closed ? 'Green' : 'Orange',
+          source: 'NASA_EONET',
+          // ── NEW v5.1 FIELDS ──
+          sources: (event.sources || []).map(s => ({
+            id: s.id,
+            url: s.url
+          })),
+          link: event.link || '',
+          description: event.description || `Volcanic activity reported at ${event.title}`,
+          startDate: firstDate || null,
+          lastObserved: lastDate || null,
+          lastUpdate: latestGeometry.date || new Date().toISOString(),
+          durationDays: durationDays,
+          geometryCount: geometryCount,
+          isClosed: !!event.closed,
+          closedDate: event.closed || null
+        };
+      });
+
+      console.log(`✅ Processed ${volcanoes.length} volcanoes from NASA EONET`);
+
+      return {
+        type: 'volcanoes',
+        timestamp: new Date().toISOString(),
+        count: volcanoes.length,
+        features: volcanoes
+      };
     }
 
-    const volcanoes = data.events.map(event => {
-      const latestGeometry = event.geometry?.[0] || {};
-      const coords = latestGeometry.coordinates || [0, 0];
-      
-      return {
-        id: `eonet_${event.id}`,
-        type: 'volcano',
-        name: event.title,
-        coordinates: coords,
-        latitude: coords[1],
-        longitude: coords[0],
-        status: event.closed ? 'closed' : 'active',
-        category: event.categories?.[0]?.title || 'Volcano',
-        date: latestGeometry.date || new Date().toISOString(),
-        sources: event.sources?.map(s => ({ id: s.id, url: s.url })) || [],
-        alertLevel: 'monitoring',
-        source: 'NASA_EONET'
-      };
-    });
-
-    console.log(`✅ Processed ${volcanoes.length} volcanoes from NASA EONET`);
-    
-    return {
-      type: 'volcanoes',
-      timestamp: new Date().toISOString(),
-      count: volcanoes.length,
-      features: volcanoes
-    };
-  }
 
   transformNASAFloods(data) {
     console.log('🌊 Processing NASA EONET floods...');
@@ -641,137 +740,220 @@ class DisasterDataAggregator {
   }
 
   transformGDACSFloods(data) {
-    console.log('🌊 Processing GDACS floods...');
-    
-    if (!data?.features) {
-      console.log('No GDACS flood data received');
-      return null;
+      console.log('🌊 Processing GDACS floods...');
+
+      if (!data?.features) {
+        console.log('No GDACS flood data received');
+        return null;
+      }
+
+      const now = new Date();
+
+      const floods = data.features
+        .filter(f => f.properties && f.geometry?.coordinates)
+        .map(f => {
+          const props = f.properties;
+          const coords = f.geometry.coordinates;
+
+          const eventStatus = this.computeEventStatus(props);
+
+          // ── Duration in days ──
+          let durationDays = null;
+          if (props.fromdate) {
+            const from = new Date(props.fromdate);
+            const to = props.todate ? new Date(props.todate) : new Date();
+            durationDays = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)));
+          }
+
+          return {
+            id: `gdacs_fl_${props.eventid || Math.random()}`,
+            type: 'flood',
+            name: props.eventname || props.name || 'Flood',
+            coordinates: coords,
+            latitude: coords[1],
+            longitude: coords[0],
+            alertLevel: props.alertlevel || 'Green',
+            alertScore: parseInt(props.alertscore || 0),
+            severity: props.severitydata?.severity || props.severity || 'Unknown',
+            affectedArea: parseInt(props.affectedarea || 0),
+            country: props.country || '',
+            affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
+            population: parseInt(props.population || 0),
+            fromDate: props.fromdate,
+            toDate: props.todate,
+            source: 'GDACS',
+            isActive: eventStatus.isActive,
+            status: eventStatus.status,
+            freshness: eventStatus.freshness,
+            daysSinceStart: eventStatus.daysSinceStart,
+            daysSinceEnd: eventStatus.daysSinceEnd,
+            lastUpdate: props.lastupdate || props.modified || now.toISOString(),
+            description: props.description || '',
+            // ── NEW v5.1 FIELDS ──
+            url: props.url?.report || props.url?.details || props.link || '',
+            htmlDescription: props.htmldescription || '',
+            severityScore: parseFloat(props.alertscore || 0),
+            episodeId: props.episodeid || null,
+            glide: props.glide || '',
+            iso3: props.iso3 || '',
+            durationDays: durationDays,
+            eventId: props.eventid || ''
+          };
+        })
+        .filter(flood => {
+          if (flood.isActive) return true;
+          if (flood.status === 'just_ended') return true;
+          if (flood.daysSinceEnd !== null && flood.daysSinceEnd <= 7) return true;
+          console.log(`  ⏭️ Filtering out ended GDACS flood: "${flood.name}" (ended ${flood.daysSinceEnd} days ago)`);
+          return false;
+        });
+
+      console.log(`✅ Processed ${floods.length} floods from GDACS`);
+
+      return {
+        type: 'floods_gdacs',
+        timestamp: new Date().toISOString(),
+        count: floods.length,
+        features: floods
+      };
     }
-
-    const now = new Date();
-
-    const floods = data.features
-      .filter(f => f.properties && f.geometry?.coordinates)
-      .map(f => {
-        const props = f.properties;
-        const coords = f.geometry.coordinates;
-        
-        const eventStatus = this.computeEventStatus(props);
-        
-        return {
-          id: `gdacs_fl_${props.eventid || Math.random()}`,
-          type: 'flood',
-          name: props.eventname || props.name || 'Flood',
-          coordinates: coords,
-          latitude: coords[1],
-          longitude: coords[0],
-          alertLevel: props.alertlevel || 'Green',
-          alertScore: parseInt(props.alertscore || 0),
-          severity: props.severitydata?.severity || props.severity || 'Unknown',
-          affectedArea: parseInt(props.affectedarea || 0),
-          country: props.country || '',
-          affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
-          population: parseInt(props.population || 0),
-          fromDate: props.fromdate,
-          toDate: props.todate,
-          source: 'GDACS',
-          isActive: eventStatus.isActive,
-          status: eventStatus.status,
-          freshness: eventStatus.freshness,
-          daysSinceStart: eventStatus.daysSinceStart,
-          daysSinceEnd: eventStatus.daysSinceEnd,
-          lastUpdate: props.lastupdate || props.modified || now.toISOString(),
-          description: props.description || ''
-        };
-      })
-      .filter(flood => {
-        if (flood.isActive) return true;
-        if (flood.status === 'just_ended') return true;
-        if (flood.daysSinceEnd !== null && flood.daysSinceEnd <= 7) return true;
-        console.log(`  ⏭️ Filtering out ended GDACS flood: "${flood.name}" (ended ${flood.daysSinceEnd} days ago)`);
-        return false;
-      });
-
-    console.log(`✅ Processed ${floods.length} floods from GDACS`);
-    
-    return {
-      type: 'floods_gdacs',
-      timestamp: new Date().toISOString(),
-      count: floods.length,
-      features: floods
-    };
-  }
 
   transformGDACSCyclones(data) {
-    console.log('🌀 Processing GDACS cyclones/hurricanes/typhoons...');
-    
-    if (!data?.features) {
-      console.log('No cyclone features to process');
-      return null;
-    }
-    
-    console.log(`Processing ${data.features.length} potential cyclone features`);
-    
-    const cyclones = data.features
-      .filter(f => f.properties && f.geometry?.coordinates)
-      .map(f => {
-        const props = f.properties;
-        const coords = f.geometry.coordinates;
-        
-        let windSpeed = 0;
-        if (props.windspeed !== undefined && props.windspeed !== null) {
-          windSpeed = parseInt(props.windspeed) || parseFloat(props.windspeed) || 0;
-        }
-        
-        const eventName = props.eventname || props.name || `Tropical System ${props.eventid}`;
-        let stormType = 'Tropical Depression';
-        
-        const nameLower = eventName.toLowerCase();
-        if (nameLower.includes('hurricane')) stormType = 'Hurricane';
-        else if (nameLower.includes('typhoon')) stormType = 'Typhoon';
-        else if (nameLower.includes('cyclone')) stormType = 'Cyclone';
-        else if (nameLower.includes('storm')) stormType = 'Tropical Storm';
-        else if (windSpeed > 0) {
-          if (windSpeed >= 119) stormType = 'Hurricane/Typhoon';
-          else if (windSpeed >= 63) stormType = 'Tropical Storm';
-        }
-        
-        return {
-          id: `gdacs_tc_${props.eventid || Math.random()}`,
-          type: 'cyclone',
-          name: eventName,
-          coordinates: coords,
-          latitude: coords[1],
-          longitude: coords[0],
-          alertLevel: props.alertlevel || 'Yellow',
-          alertScore: parseInt(props.alertscore || 0),
-          category: props.tc_category || this.getCycloneCategory(windSpeed),
-          windSpeed: windSpeed,
-          pressure: parseInt(props.pressure || 0) || 1000,
-          direction: props.direction || 0,
-          speed: props.speed || 0,
-          country: props.country || this.extractCountryName(props.affectedcountries?.[0]) || 'Ocean',
-          affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
-          population: parseInt(props.population || 0),
-          fromDate: props.fromdate,
-          toDate: props.todate,
-          source: 'GDACS',
-          stormType: stormType,
-          isActive: !props.todate || new Date(props.todate) > new Date(),
-          severity: props.severitydata?.severity || props.severity || windSpeed,
-          description: props.description || `${stormType} with winds ${windSpeed} km/h`
-        };
-      });
+      console.log('🌀 Processing GDACS cyclones/hurricanes/typhoons...');
 
-    console.log(`✅ Processed ${cyclones.length} cyclones/hurricanes/typhoons from GDACS`);
-    
-    return {
-      type: 'cyclones',
-      timestamp: new Date().toISOString(),
-      count: cyclones.length,
-      features: cyclones
-    };
-  }
+      if (!data?.features) {
+        console.log('No cyclone features to process');
+        return null;
+      }
+
+      console.log(`Processing ${data.features.length} potential cyclone features`);
+
+      const cyclones = data.features
+        .filter(f => f.properties && f.geometry?.coordinates)
+        .map(f => {
+          const props = f.properties;
+          const coords = f.geometry.coordinates;
+
+          let windSpeed = 0;
+          if (props.windspeed !== undefined && props.windspeed !== null) {
+            windSpeed = parseInt(props.windspeed) || parseFloat(props.windspeed) || 0;
+          }
+
+          const eventName = props.eventname || props.name || `Tropical System ${props.eventid}`;
+          let stormType = 'Tropical Depression';
+
+          const nameLower = eventName.toLowerCase();
+          if (nameLower.includes('hurricane')) stormType = 'Hurricane';
+          else if (nameLower.includes('typhoon')) stormType = 'Typhoon';
+          else if (nameLower.includes('cyclone')) stormType = 'Cyclone';
+          else if (nameLower.includes('storm')) stormType = 'Tropical Storm';
+          else if (windSpeed > 0) {
+            if (windSpeed >= 119) stormType = 'Hurricane/Typhoon';
+            else if (windSpeed >= 63) stormType = 'Tropical Storm';
+          }
+
+          // ── Saffir-Simpson classification ──
+          let saffirSimpson = '';
+          if (windSpeed >= 252) saffirSimpson = 'Category 5 — Catastrophic';
+          else if (windSpeed >= 209) saffirSimpson = 'Category 4 — Devastating';
+          else if (windSpeed >= 178) saffirSimpson = 'Category 3 — Major';
+          else if (windSpeed >= 154) saffirSimpson = 'Category 2 — Extensive';
+          else if (windSpeed >= 119) saffirSimpson = 'Category 1 — Dangerous';
+          else if (windSpeed >= 63) saffirSimpson = 'Tropical Storm';
+          else saffirSimpson = 'Tropical Depression';
+
+          // ── Beaufort Scale ──
+          let beaufort = 0;
+          const wsKnots = windSpeed * 0.539957;
+          if (wsKnots >= 64) beaufort = 12;
+          else if (wsKnots >= 56) beaufort = 11;
+          else if (wsKnots >= 48) beaufort = 10;
+          else if (wsKnots >= 41) beaufort = 9;
+          else if (wsKnots >= 34) beaufort = 8;
+          else if (wsKnots >= 28) beaufort = 7;
+          else if (wsKnots >= 22) beaufort = 6;
+
+          // ── Movement description ──
+          const speed = parseFloat(props.speed || 0);
+          const direction = parseFloat(props.direction || 0);
+          let movementDesc = '';
+          if (speed > 0) {
+            const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+            const dirIndex = Math.round(((direction % 360) / 22.5)) % 16;
+            movementDesc = `Moving ${dirs[dirIndex]} at ${speed.toFixed(0)} km/h`;
+          }
+
+          // ── Pressure classification ──
+          const pressure = parseInt(props.pressure || 0);
+          let pressureDesc = '';
+          if (pressure > 0) {
+            if (pressure < 920) pressureDesc = 'Extremely Low — Violent';
+            else if (pressure < 945) pressureDesc = 'Very Low — Intense';
+            else if (pressure < 965) pressureDesc = 'Low — Strong';
+            else if (pressure < 990) pressureDesc = 'Below Normal — Moderate';
+            else pressureDesc = 'Near Normal';
+          }
+
+          // ── Duration in days ──
+          let durationDays = null;
+          if (props.fromdate) {
+            const from = new Date(props.fromdate);
+            const to = props.todate ? new Date(props.todate) : new Date();
+            durationDays = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)));
+          }
+
+          return {
+            id: `gdacs_tc_${props.eventid || Math.random()}`,
+            type: 'cyclone',
+            name: eventName,
+            coordinates: coords,
+            latitude: coords[1],
+            longitude: coords[0],
+            alertLevel: props.alertlevel || 'Yellow',
+            alertScore: parseFloat(props.alertscore || 0),
+            category: props.tc_category || this.getCycloneCategory(windSpeed),
+            windSpeed: windSpeed,
+            pressure: pressure || null,
+            direction: direction,
+            speed: speed,
+            country: props.country || this.extractCountryName(props.affectedcountries?.[0]) || 'Ocean',
+            affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
+            population: parseInt(props.population || 0),
+            fromDate: props.fromdate,
+            toDate: props.todate,
+            source: 'GDACS',
+            stormType: stormType,
+            isActive: !props.todate || new Date(props.todate) > new Date(),
+            severity: props.severitydata?.severity || props.severity || windSpeed,
+            description: props.description || `${stormType} with winds ${windSpeed} km/h`,
+            // ── NEW v5.1 FIELDS ──
+            url: props.url?.report || props.url?.details || props.link || '',
+            episodeId: props.episodeid || null,
+            htmlDescription: props.htmldescription || '',
+            iso3: props.iso3 || props.countryiso || '',
+            lastUpdate: props.lastupdate || props.modified || new Date().toISOString(),
+            durationDays: durationDays,
+            saffirSimpson: saffirSimpson,
+            beaufort: beaufort,
+            movementDesc: movementDesc,
+            pressureDesc: pressureDesc,
+            affectedArea: parseInt(props.affectedarea || 0),
+            glide: props.glide || '',
+            eventId: props.eventid || '',
+            maxWindRadius: parseInt(props.maxwindradius || 0),
+            iconUrl: props.icon || ''
+          };
+        });
+
+      console.log(`✅ Processed ${cyclones.length} cyclones/hurricanes/typhoons from GDACS`);
+
+      return {
+        type: 'cyclones',
+        timestamp: new Date().toISOString(),
+        count: cyclones.length,
+        features: cyclones
+      };
+    }
 
   getCycloneCategory(windSpeed) {
     if (windSpeed >= 252) return 'Category 5';

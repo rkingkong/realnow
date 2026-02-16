@@ -221,3 +221,311 @@
   .analytics-type-grid { grid-template-columns: repeat(2, 1fr); }
   .prefs-lang-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RealNow v5.1 — ENHANCED DETAIL DRAWER STYLES
+   Add these to v5-enhancements.css or App.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Section Headers ── */
+.drawer-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #00ccff;
+  margin: 0 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 204, 255, 0.15);
+}
+
+/* ── Drawer sections spacing ── */
+.drawer-section {
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+
+.drawer-section:last-child {
+  border-bottom: none;
+}
+
+/* ── Enhanced rows ── */
+.drawer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 5px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.drawer-row:last-child {
+  border-bottom: none;
+}
+
+.drawer-row > span:first-child {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.drawer-row > strong {
+  text-align: right;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+  max-width: 60%;
+  word-break: break-word;
+}
+
+/* ── Description text ── */
+.drawer-description {
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.drawer-description-long {
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.drawer-description-long::-webkit-scrollbar {
+  width: 4px;
+}
+
+.drawer-description-long::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+/* ── Safety Instructions (weather) ── */
+.drawer-instruction {
+  background: rgba(255, 170, 0, 0.08);
+  border: 1px solid rgba(255, 170, 0, 0.2);
+  border-radius: 8px;
+  padding: 12px !important;
+}
+
+.drawer-instruction .drawer-section-title {
+  color: #ffaa00;
+  border-bottom-color: rgba(255, 170, 0, 0.2);
+}
+
+.drawer-instruction-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+}
+
+/* ── Areas text (weather) ── */
+.drawer-areas {
+  font-size: 11px !important;
+  max-width: 200px;
+  text-align: right;
+}
+
+/* ── External Links ── */
+.drawer-ext-link {
+  display: block;
+  color: #00ccff;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: rgba(0, 204, 255, 0.06);
+  border: 1px solid rgba(0, 204, 255, 0.15);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  transition: all 0.2s ease;
+}
+
+.drawer-ext-link:hover {
+  background: rgba(0, 204, 255, 0.12);
+  border-color: rgba(0, 204, 255, 0.3);
+  transform: translateX(2px);
+}
+
+/* ── Internal source links ── */
+.drawer-link {
+  color: #00ccff;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.drawer-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Alert level colors ── */
+.alert-red, .alert-Red { color: #ff4444 !important; }
+.alert-orange, .alert-Orange { color: #ff8800 !important; }
+.alert-yellow, .alert-Yellow { color: #ffcc00 !important; }
+.alert-green, .alert-Green { color: #44cc44 !important; }
+
+/* ── Severity classes ── */
+.sev-extreme { color: #ff2222; }
+.sev-severe { color: #ff6600; }
+.sev-moderate { color: #ffcc00; }
+.sev-minor { color: #88cc44; }
+
+/* ── Text color helpers ── */
+.text-red { color: #ff4444 !important; }
+.text-orange { color: #ff8800 !important; }
+.text-green { color: #44cc44 !important; }
+
+/* ── Status badges ── */
+.drawer-status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.drawer-status-badge.active {
+  background: rgba(255, 50, 50, 0.15);
+  border: 1px solid rgba(255, 50, 50, 0.3);
+  color: #ff5555;
+}
+
+.drawer-status-badge.contained {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── Tsunami warning ── */
+.drawer-alert.tsunami {
+  background: rgba(255, 60, 60, 0.12);
+  border: 1px solid rgba(255, 60, 60, 0.3);
+  color: #ff4444;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  margin: 8px 0;
+  animation: pulse-tsunami 2s ease-in-out infinite;
+}
+
+@keyframes pulse-tsunami {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ── Enhanced Popup styles ── */
+.enhanced-popup {
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.enhanced-popup .popup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.enhanced-popup .popup-icon {
+  font-size: 20px;
+}
+
+.enhanced-popup .popup-name {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.enhanced-popup .popup-quick-stats {
+  margin: 6px 0;
+}
+
+.enhanced-popup .popup-stat {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 2px 0;
+}
+
+.enhanced-popup .popup-stat.type-label {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.enhanced-popup .popup-stat.movement {
+  font-style: italic;
+  color: rgba(0, 204, 255, 0.7);
+}
+
+.enhanced-popup .popup-stat.active-status {
+  color: #ff5555;
+  font-weight: 600;
+}
+
+.enhanced-popup .popup-stat.ended-status {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.enhanced-popup .popup-stat.intensity {
+  color: #ffcc00;
+}
+
+.enhanced-popup .popup-alert {
+  color: #ff4444;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.enhanced-popup .popup-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+}
+
+.enhanced-popup .popup-country {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.enhanced-popup .popup-source {
+  color: rgba(0, 204, 255, 0.5);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Drawer Footer ── */
+.drawer-footer {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  gap: 8px;
+}
+
+.drawer-share-btn {
+  flex: 1;
+  background: rgba(0, 204, 255, 0.1);
+  border: 1px solid rgba(0, 204, 255, 0.2);
+  color: #00ccff;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.drawer-share-btn:hover {
+  background: rgba(0, 204, 255, 0.2);
+  border-color: rgba(0, 204, 255, 0.4);
+}
