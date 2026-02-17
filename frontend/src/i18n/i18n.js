@@ -40,7 +40,8 @@ const TRANSLATIONS = {
     mapStyleTitle:'Map Style',darkMode:'Dark',satellite:'Satellite',terrain:'Terrain',light:'Light',language:'Language',sound:'Sound',alertsTitle:'Alerts & Notifications',browserNotifications:'Browser Notifications',alertSounds:'Alert Sounds',watchArea:'Watch Area',clearWatchArea:'Clear Watch Area',noWatchArea:'No watch area set. Click the map with the watch tool.',emailDigest:'Email Digest',emailDigestDesc:'Receive a summary of events in your watch area.',saveEmail:'Save Email',frequency:'Frequency',off:'Off',daily:'Daily',weekly:'Weekly',about:'About',
     disasterMonitor:'DISASTER MONITOR',layers:'LAYERS',controls:'CONTROLS',heatmap:'Heatmap',alerts:'Alerts',clearWatch:'Clear Watch',actions:'ACTIONS',
     overview:'Overview',severityTab:'Severity',sourcesTab:'Sources',eventsByType:'Events by Type',severityBar:'Severity Bar',severityDistribution:'Severity Distribution',mostAffectedRegions:'Most Affected Regions',dataSourceHealth:'Data Source Health',lastFetchTimes:'Last Fetch Times',noCountryData:'No country data available yet.',loadingServerStats:'Loading server stats...',events:'EVENTS',count:'Count',updated:'Updated',never:'Never',ok:'OK',noDataLabel:'NO DATA',
-    justNow:'just now',secondsAgo:'{n}s ago',minutesAgo:'{n}m ago',hoursAgo:'{n}h ago',daysAgo:'{n}d ago',day:'day',
+    justNow:'just now',secondsAgo:'{n}s ago',minutesAgo:'{n}m ago',hoursAgo:'{n}h ago',daysAgo:'{n}d ago',day:'day',impactAssessment:'Impact Assessment',stormClassification:'Storm Classification',windAndPressure:'Wind & Pressure',movementDuration:'Movement & Duration',extentImpact:'Extent & Impact',locationImpact:'Location & Impact',externalLinks:'External Links',thermalDetection:'Thermal Detection', pagerAlert:'PAGER Alert',maxShaking:'Max Shaking (MMI)',communityIntensity:'Community Intensity',significance:'Significance',azimuthalGap:'Azimuthal Gap',rmsResidual:'RMS Residual',stationsUsed:'Stations Used',network:'Network', beaufortScale:'Beaufort Scale',maxWindRadius:'Max Wind Radius',heading:'Heading',affectedCountries:'Affected Countries',started:'Started',activeFor:'Active For',lastUpdate:'Last Update',alertScore:'Alert Score', firstObserved:'First Observed',lastObserved:'Last Observed',observations:'Observations',closed:'Closed',brightness:'Brightness',confidence:'Confidence',estimatedArea:'Est. Pixel Area',region:'Region',
+
   },
   es: {
     loading:'Cargando datos de desastres en tiempo real...',connected:'Conectado',disconnected:'Desconectado',live:'EN VIVO',offline:'SIN CONEXIÓN',close:'Cerrar',back:'Volver',search:'Buscar',share:'Compartir',settings:'Configuración',analytics:'Analíticas',copyLink:'Copiar Enlace',linkCopied:'¡Enlace copiado!',viewFullDetails:'Ver Detalles Completos →',streamingLive:'Transmitiendo en vivo',reconnecting:'Reconectando...',unknown:'Desconocido',noData:'Sin datos',reports:'reportes',
@@ -64,6 +65,11 @@ const TRANSLATIONS = {
     disasterMonitor:'MONITOR DE DESASTRES',layers:'CAPAS',controls:'CONTROLES',heatmap:'Mapa de Calor',alerts:'Alertas',clearWatch:'Limpiar Vigilancia',actions:'ACCIONES',
     overview:'Resumen',severityTab:'Severidad',sourcesTab:'Fuentes',eventsByType:'Eventos por Tipo',severityBar:'Barra de Severidad',severityDistribution:'Distribución de Severidad',mostAffectedRegions:'Regiones Más Afectadas',dataSourceHealth:'Salud de Fuentes de Datos',lastFetchTimes:'Últimas Actualizaciones',noCountryData:'Sin datos de países disponibles.',loadingServerStats:'Cargando estadísticas...',events:'EVENTOS',count:'Cantidad',updated:'Actualizado',never:'Nunca',ok:'OK',noDataLabel:'SIN DATOS',
     justNow:'ahora',secondsAgo:'hace {n}s',minutesAgo:'hace {n}m',hoursAgo:'hace {n}h',daysAgo:'hace {n}d',day:'día',
+    impactAssessment:'Evaluación de Impacto',stormClassification:'Clasificación de Tormenta',windAndPressure:'Viento y Presión',movementDuration:'Movimiento y Duración',extentImpact:'Extensión e Impacto',locationImpact:'Ubicación e Impacto',externalLinks:'Enlaces Externos',thermalDetection:'Detección Térmica',
+    pagerAlert:'Alerta PAGER',maxShaking:'Sacudida Máx. (MMI)',communityIntensity:'Intensidad Comunitaria',significance:'Significancia',azimuthalGap:'Brecha Azimutal',rmsResidual:'Residual RMS',stationsUsed:'Estaciones Usadas',network:'Red',
+    beaufortScale:'Escala Beaufort',maxWindRadius:'Radio Máx. de Viento',heading:'Dirección',affectedCountries:'Países Afectados',started:'Iniciado',activeFor:'Activo por',lastUpdate:'Última Actualización',alertScore:'Puntuación de Alerta',
+    firstObserved:'Primera Observación',lastObserved:'Última Observación',observations:'Observaciones',closed:'Cerrado',brightness:'Brillo',confidence:'Confianza',estimatedArea:'Área Est. de Pixel',region:'Región',
+  
   },
   fr: {
     loading:'Chargement des données en temps réel...',connected:'Connecté',disconnected:'Déconnecté',live:'EN DIRECT',offline:'HORS LIGNE',close:'Fermer',back:'Retour',search:'Rechercher',share:'Partager',settings:'Paramètres',analytics:'Analytique',copyLink:'Copier le lien',linkCopied:'Lien copié !',viewFullDetails:'Voir tous les détails →',streamingLive:'Diffusion en direct',reconnecting:'Reconnexion...',unknown:'Inconnu',noData:'Pas de données',reports:'rapports',
@@ -87,6 +93,11 @@ const TRANSLATIONS = {
     disasterMonitor:'MONITEUR DE CATASTROPHES',layers:'COUCHES',controls:'CONTRÔLES',heatmap:'Carte thermique',alerts:'Alertes',clearWatch:'Effacer surveillance',actions:'ACTIONS',
     overview:'Aperçu',severityTab:'Gravité',sourcesTab:'Sources',eventsByType:'Événements par type',severityBar:'Barre de gravité',severityDistribution:'Distribution de gravité',mostAffectedRegions:'Régions les plus touchées',dataSourceHealth:'Santé des sources',lastFetchTimes:'Dernières mises à jour',noCountryData:'Aucune donnée disponible.',loadingServerStats:'Chargement...',events:'ÉVÉNEMENTS',count:'Nombre',updated:'Mis à jour',never:'Jamais',ok:'OK',noDataLabel:'PAS DE DONNÉES',
     justNow:'à l\'instant',secondsAgo:'il y a {n}s',minutesAgo:'il y a {n}m',hoursAgo:'il y a {n}h',daysAgo:'il y a {n}j',day:'jour',
+    impactAssessment:'Évaluation d\'impact',stormClassification:'Classification de tempête',windAndPressure:'Vent et pression',movementDuration:'Mouvement et durée',extentImpact:'Étendue et impact',locationImpact:'Lieu et impact',externalLinks:'Liens externes',thermalDetection:'Détection thermique',
+    pagerAlert:'Alerte PAGER',maxShaking:'Secousse max. (MMI)',communityIntensity:'Intensité communautaire',significance:'Significance',azimuthalGap:'Écart azimutal',rmsResidual:'Résidu RMS',stationsUsed:'Stations utilisées',network:'Réseau',
+    beaufortScale:'Échelle Beaufort',maxWindRadius:'Rayon max. de vent',heading:'Cap',affectedCountries:'Pays affectés',started:'Débuté',activeFor:'Actif depuis',lastUpdate:'Dernière mise à jour',alertScore:'Score d\'alerte',
+    firstObserved:'Première observation',lastObserved:'Dernière observation',observations:'Observations',closed:'Fermé',brightness:'Luminosité',confidence:'Confiance',estimatedArea:'Surface pixel est.',region:'Région',
+  
   },
   pt: {
     loading:'Carregando dados em tempo real...',connected:'Conectado',disconnected:'Desconectado',live:'AO VIVO',offline:'OFFLINE',close:'Fechar',back:'Voltar',search:'Buscar',share:'Compartilhar',settings:'Configurações',analytics:'Análises',copyLink:'Copiar Link',linkCopied:'Link copiado!',viewFullDetails:'Ver Detalhes Completos →',streamingLive:'Transmitindo ao vivo',reconnecting:'Reconectando...',unknown:'Desconhecido',noData:'Sem dados',reports:'relatórios',
@@ -110,6 +121,13 @@ const TRANSLATIONS = {
     disasterMonitor:'MONITOR DE DESASTRES',layers:'CAMADAS',controls:'CONTROLES',heatmap:'Mapa de Calor',alerts:'Alertas',clearWatch:'Limpar Vigilância',actions:'AÇÕES',
     overview:'Visão Geral',severityTab:'Severidade',sourcesTab:'Fontes',eventsByType:'Eventos por Tipo',severityBar:'Barra de Severidade',severityDistribution:'Distribuição de Severidade',mostAffectedRegions:'Regiões Mais Afetadas',dataSourceHealth:'Saúde das Fontes',lastFetchTimes:'Últimas Atualizações',noCountryData:'Sem dados disponíveis.',loadingServerStats:'Carregando...',events:'EVENTOS',count:'Contagem',updated:'Atualizado',never:'Nunca',ok:'OK',noDataLabel:'SEM DADOS',
     justNow:'agora',secondsAgo:'{n}s atrás',minutesAgo:'{n}m atrás',hoursAgo:'{n}h atrás',daysAgo:'{n}d atrás',day:'dia',
+    impactAssessment:'Avaliação de Impacto',stormClassification:'Classificação da Tempestade',windAndPressure:'Vento e Pressão',movementDuration:'Movimento e Duração',extentImpact:'Extensão e Impacto',locationImpact:'Localização e Impacto',externalLinks:'Links Externos',thermalDetection:'Detecção Térmica',
+    pagerAlert:'Alerta PAGER',maxShaking:'Tremor Máx. (MMI)',communityIntensity:'Intensidade Comunitária',significance:'Significância',azimuthalGap:'Lacuna Azimutal',rmsResidual:'Residual RMS',stationsUsed:'Estações Usadas',network:'Rede',
+    beaufortScale:'Escala Beaufort',maxWindRadius:'Raio Máx. de Vento',heading:'Direção',affectedCountries:'Países Afetados',started:'Iniciado',activeFor:'Ativo há',lastUpdate:'Última Atualização',alertScore:'Pontuação de Alerta',
+    firstObserved:'Primeira Observação',lastObserved:'Última Observação',observations:'Observações',closed:'Fechado',brightness:'Brilho',confidence:'Confiança',estimatedArea:'Área Est. de Pixel',region:'Região',
+
+  
+  
   },
   ar: {
     loading:'جاري تحميل بيانات الكوارث...',connected:'متصل',disconnected:'غير متصل',live:'مباشر',offline:'غير متصل',close:'إغلاق',back:'رجوع',search:'بحث',share:'مشاركة',settings:'الإعدادات',analytics:'التحليلات',copyLink:'نسخ الرابط',linkCopied:'تم نسخ الرابط!',viewFullDetails:'عرض التفاصيل الكاملة ←',streamingLive:'بث مباشر',reconnecting:'إعادة الاتصال...',unknown:'غير معروف',noData:'لا توجد بيانات',reports:'تقارير',
@@ -133,6 +151,11 @@ const TRANSLATIONS = {
     disasterMonitor:'مراقب الكوارث',layers:'الطبقات',controls:'أدوات التحكم',heatmap:'خريطة حرارية',alerts:'تنبيهات',clearWatch:'مسح المراقبة',actions:'الإجراءات',
     overview:'نظرة عامة',severityTab:'الشدة',sourcesTab:'المصادر',eventsByType:'الأحداث حسب النوع',severityBar:'شريط الشدة',severityDistribution:'توزيع الشدة',mostAffectedRegions:'المناطق الأكثر تأثراً',dataSourceHealth:'صحة المصادر',lastFetchTimes:'أوقات آخر تحديث',noCountryData:'لا توجد بيانات.',loadingServerStats:'جاري التحميل...',events:'الأحداث',count:'العدد',updated:'محدث',never:'أبداً',ok:'OK',noDataLabel:'لا بيانات',
     justNow:'الآن',secondsAgo:'منذ {n}ث',minutesAgo:'منذ {n}د',hoursAgo:'منذ {n}س',daysAgo:'منذ {n}ي',day:'يوم',
+    impactAssessment:'تقييم التأثير',stormClassification:'تصنيف العاصفة',windAndPressure:'الرياح والضغط',movementDuration:'الحركة والمدة',extentImpact:'النطاق والتأثير',locationImpact:'الموقع والتأثير',externalLinks:'روابط خارجية',thermalDetection:'الكشف الحراري',
+    pagerAlert:'تنبيه PAGER',maxShaking:'أقصى اهتزاز (MMI)',communityIntensity:'شدة المجتمع',significance:'الأهمية',azimuthalGap:'الفجوة السمتية',rmsResidual:'بقايا RMS',stationsUsed:'المحطات المستخدمة',network:'الشبكة',
+    beaufortScale:'مقياس بوفورت',maxWindRadius:'أقصى نصف قطر الرياح',heading:'الاتجاه',affectedCountries:'الدول المتأثرة',started:'بدأ',activeFor:'نشط منذ',lastUpdate:'آخر تحديث',alertScore:'درجة التنبيه',
+    firstObserved:'أول رصد',lastObserved:'آخر رصد',observations:'الملاحظات',closed:'مغلق',brightness:'السطوع',confidence:'الثقة',estimatedArea:'مساحة البكسل المقدرة',region:'المنطقة',
+  
   },
   zh: {
     loading:'正在加载实时灾害数据...',connected:'已连接',disconnected:'已断开',live:'直播',offline:'离线',close:'关闭',back:'返回',search:'搜索',share:'分享',settings:'设置',analytics:'分析',copyLink:'复制链接',linkCopied:'链接已复制！',viewFullDetails:'查看完整详情 →',streamingLive:'实时传输中',reconnecting:'正在重连...',unknown:'未知',noData:'无数据',reports:'报告',
@@ -156,6 +179,11 @@ const TRANSLATIONS = {
     disasterMonitor:'灾害监控',layers:'图层',controls:'控制',heatmap:'热力图',alerts:'警报',clearWatch:'清除监视',actions:'操作',
     overview:'概览',severityTab:'严重程度',sourcesTab:'数据源',eventsByType:'按类型分类',severityBar:'严重程度条',severityDistribution:'严重程度分布',mostAffectedRegions:'受影响最大地区',dataSourceHealth:'数据源状况',lastFetchTimes:'最近更新时间',noCountryData:'暂无国家数据。',loadingServerStats:'加载中...',events:'事件',count:'数量',updated:'更新',never:'从未',ok:'正常',noDataLabel:'无数据',
     justNow:'刚刚',secondsAgo:'{n}秒前',minutesAgo:'{n}分钟前',hoursAgo:'{n}小时前',daysAgo:'{n}天前',day:'天',
+    impactAssessment:'影响评估',stormClassification:'风暴分类',windAndPressure:'风力与气压',movementDuration:'移动与持续时间',extentImpact:'范围与影响',locationImpact:'位置与影响',externalLinks:'外部链接',thermalDetection:'热检测',
+    pagerAlert:'PAGER警报',maxShaking:'最大震感(MMI)',communityIntensity:'社区强度',significance:'重要性',azimuthalGap:'方位角间隙',rmsResidual:'RMS残差',stationsUsed:'使用站点',network:'网络',
+    beaufortScale:'蒲福风力等级',maxWindRadius:'最大风力半径',heading:'航向',affectedCountries:'受影响国家',started:'开始',activeFor:'已活跃',lastUpdate:'最后更新',alertScore:'警报分数',
+    firstObserved:'首次观测',lastObserved:'最后观测',observations:'观测次数',closed:'已关闭',brightness:'亮度',confidence:'可信度',estimatedArea:'像素面积估算',region:'区域',
+ 
   },
   hi: {
     loading:'रियल-टाइम आपदा डेटा लोड हो रहा है...',connected:'कनेक्टेड',disconnected:'डिस्कनेक्टेड',live:'लाइव',offline:'ऑफ़लाइन',close:'बंद करें',back:'वापस',search:'खोजें',share:'शेयर',settings:'सेटिंग्स',analytics:'विश्लेषण',copyLink:'लिंक कॉपी करें',linkCopied:'लिंक कॉपी हो गया!',viewFullDetails:'पूरा विवरण देखें →',streamingLive:'लाइव स्ट्रीमिंग',reconnecting:'पुनः कनेक्ट हो रहा है...',unknown:'अज्ञात',noData:'कोई डेटा नहीं',reports:'रिपोर्ट',
@@ -179,6 +207,11 @@ const TRANSLATIONS = {
     disasterMonitor:'आपदा मॉनिटर',layers:'परतें',controls:'नियंत्रण',heatmap:'हीट मैप',alerts:'अलर्ट',clearWatch:'निगरानी साफ़ करें',actions:'कार्रवाई',
     overview:'अवलोकन',severityTab:'गंभीरता',sourcesTab:'स्रोत',eventsByType:'प्रकार के अनुसार',severityBar:'गंभीरता बार',severityDistribution:'गंभीरता वितरण',mostAffectedRegions:'सबसे प्रभावित क्षेत्र',dataSourceHealth:'डेटा स्रोत स्वास्थ्य',lastFetchTimes:'अंतिम अपडेट',noCountryData:'देश डेटा उपलब्ध नहीं।',loadingServerStats:'लोड हो रहा है...',events:'घटनाएं',count:'गिनती',updated:'अपडेट',never:'कभी नहीं',ok:'OK',noDataLabel:'कोई डेटा नहीं',
     justNow:'अभी',secondsAgo:'{n}स पहले',minutesAgo:'{n}मि पहले',hoursAgo:'{n}घं पहले',daysAgo:'{n}दि पहले',day:'दिन',
+    impactAssessment:'प्रभाव आकलन',stormClassification:'तूफान वर्गीकरण',windAndPressure:'हवा और दबाव',movementDuration:'गति और अवधि',extentImpact:'विस्तार और प्रभाव',locationImpact:'स्थान और प्रभाव',externalLinks:'बाहरी लिंक',thermalDetection:'ताप पहचान',
+    pagerAlert:'PAGER अलर्ट',maxShaking:'अधिकतम कंपन (MMI)',communityIntensity:'सामुदायिक तीव्रता',significance:'महत्व',azimuthalGap:'दिगंशीय अंतर',rmsResidual:'RMS अवशेष',stationsUsed:'प्रयुक्त स्टेशन',network:'नेटवर्क',
+    beaufortScale:'ब्यूफोर्ट पैमाना',maxWindRadius:'अधिकतम पवन त्रिज्या',heading:'दिशा',affectedCountries:'प्रभावित देश',started:'शुरू',activeFor:'सक्रिय',lastUpdate:'अंतिम अपडेट',alertScore:'अलर्ट स्कोर',
+    firstObserved:'पहला अवलोकन',lastObserved:'अंतिम अवलोकन',observations:'अवलोकन',closed:'बंद',brightness:'चमक',confidence:'विश्वसनीयता',estimatedArea:'अनुमानित पिक्सेल क्षेत्र',region:'क्षेत्र',
+ 
   }
 };
 

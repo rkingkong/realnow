@@ -1,51 +1,30 @@
 // ============================================================================
-// AnalyticsDashboard.js — Full Analytics Panel
+// AnalyticsDashboard.js — v5.2 COMPLETE i18n
 // Drop into: /var/www/realnow/frontend/src/components/AnalyticsDashboard.js
-// ============================================================================
-//
-// Slide-out panel with:
-// - Trend charts (events over time per type)
-// - Geographic distribution
-// - Severity breakdown
-// - Most affected countries leaderboard
-// - Source health monitoring
-//
-// Uses inline SVG charts (no external charting library needed).
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from '../i18n/i18n';
 
-// ── Mini SVG Chart Components ──────────────────────────────────────────────
+// ── Spark Bar Chart ────────────────────────────────────────────────────────
 
-const SparkBar = ({ values, colors, labels, maxH = 80, barW = 18, gap = 4 }) => {
+const SparkBar = ({ values, colors, labels, maxH = 70, barW = 28, gap = 6 }) => {
   const max = Math.max(...values, 1);
-  const w = values.length * (barW + gap) - gap;
-  
+  const totalW = values.length * (barW + gap) - gap;
   return (
-    <svg width={w} height={maxH + 20} className="spark-bar">
+    <svg width={totalW} height={maxH + 20} style={{ display: 'block', margin: '0 auto' }}>
       {values.map((v, i) => {
         const h = (v / max) * maxH;
         const x = i * (barW + gap);
         return (
           <g key={i}>
-            <rect
-              x={x} y={maxH - h} width={barW} height={Math.max(h, 2)}
-              fill={colors?.[i] || '#4488ff'} rx={3} opacity={0.85}
-            />
-            <text
-              x={x + barW / 2} y={maxH + 12}
-              textAnchor="middle" fill="#888" fontSize="9" fontFamily="monospace"
-            >
-              {labels?.[i] || ''}
+            <rect x={x} y={maxH - h} width={barW} height={h} rx={4} fill={colors[i]} opacity={0.85} />
+            <text x={x + barW / 2} y={maxH - h - 4} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="600">
+              {v > 0 ? v : ''}
             </text>
-            {v > 0 && (
-              <text
-                x={x + barW / 2} y={maxH - h - 4}
-                textAnchor="middle" fill="#ccc" fontSize="10" fontFamily="monospace" fontWeight="600"
-              >
-                {v}
-              </text>
-            )}
+            <text x={x + barW / 2} y={maxH + 13} textAnchor="middle" fill="#888" fontSize="8">
+              {labels[i]}
+            </text>
           </g>
         );
       })}
@@ -53,35 +32,34 @@ const SparkBar = ({ values, colors, labels, maxH = 80, barW = 18, gap = 4 }) => 
   );
 };
 
-const DonutChart = ({ segments, size = 100, strokeWidth = 14 }) => {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
+// ── Donut Chart ────────────────────────────────────────────────────────────
+
+const DonutChart = ({ segments, size = 120, eventsLabel = 'EVENTS' }) => {
   const total = segments.reduce((s, seg) => s + seg.value, 0);
+  if (total === 0) return null;
+  const radius = size / 2 - 8;
+  const circumference = 2 * Math.PI * radius;
   let offset = 0;
 
   return (
-    <svg width={size} height={size} className="donut-chart">
-      <circle
-        cx={size / 2} cy={size / 2} r={radius}
-        fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={strokeWidth}
-      />
-      {total > 0 && segments.filter(s => s.value > 0).map((seg, i) => {
+    <svg width={size} height={size} style={{ display: 'block' }}>
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#222" strokeWidth="12" />
+      {segments.map((seg, i) => {
         const pct = seg.value / total;
-        const dashLen = pct * circumference;
-        const currentOffset = offset;
-        offset += dashLen;
-        return (
+        const dash = pct * circumference;
+        const el = (
           <circle
             key={i}
             cx={size / 2} cy={size / 2} r={radius}
-            fill="none" stroke={seg.color} strokeWidth={strokeWidth}
-            strokeDasharray={`${dashLen} ${circumference - dashLen}`}
-            strokeDashoffset={-currentOffset}
-            strokeLinecap="round"
+            fill="none" stroke={seg.color} strokeWidth="12"
+            strokeDasharray={`${dash} ${circumference - dash}`}
+            strokeDashoffset={-offset}
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
             opacity={0.85}
           />
         );
+        offset += dash;
+        return el;
       })}
       <text
         x={size / 2} y={size / 2 - 6} textAnchor="middle"
@@ -93,7 +71,7 @@ const DonutChart = ({ segments, size = 100, strokeWidth = 14 }) => {
         x={size / 2} y={size / 2 + 10} textAnchor="middle"
         fill="#888" fontSize="9" fontFamily="monospace" textTransform="uppercase"
       >
-        EVENTS
+        {eventsLabel}
       </text>
     </svg>
   );
@@ -132,20 +110,21 @@ function getSeverityBucket(item, type) {
 // ── Main Component ─────────────────────────────────────────────────────────
 
 const DISASTER_META = {
-  earthquakes:  { icon: '🌍', color: '#ff4444', label: 'Earthquakes' },
-  wildfires:    { icon: '🔥', color: '#ff6600', label: 'Wildfires' },
-  floods:       { icon: '🌊', color: '#4488ff', label: 'Floods' },
-  cyclones:     { icon: '🌀', color: '#00ccff', label: 'Cyclones' },
-  volcanoes:    { icon: '🌋', color: '#ff3333', label: 'Volcanoes' },
-  droughts:     { icon: '🏜️', color: '#cc9900', label: 'Droughts' },
-  landslides:   { icon: '⛰️', color: '#8B4513', label: 'Landslides' },
-  tsunamis:     { icon: '🌊', color: '#0066cc', label: 'Tsunamis' },
-  spaceweather: { icon: '☀️', color: '#ff00ff', label: 'Space Weather' },
-  fires:        { icon: '🔥', color: '#ff8800', label: 'Hotspots' },
-  weather:      { icon: '⚠️', color: '#ffaa00', label: 'Weather' },
+  earthquakes:  { icon: '🌍', color: '#ff4444', labelKey: 'earthquakes' },
+  wildfires:    { icon: '🔥', color: '#ff6600', labelKey: 'wildfires' },
+  floods:       { icon: '🌊', color: '#4488ff', labelKey: 'floods' },
+  cyclones:     { icon: '🌀', color: '#00ccff', labelKey: 'cyclones' },
+  volcanoes:    { icon: '🌋', color: '#ff3333', labelKey: 'volcanoes' },
+  droughts:     { icon: '🏜️', color: '#cc9900', labelKey: 'droughts' },
+  landslides:   { icon: '⛰️', color: '#8B4513', labelKey: 'landslides' },
+  tsunamis:     { icon: '🌊', color: '#0066cc', labelKey: 'tsunamis' },
+  spaceweather: { icon: '☀️', color: '#ff00ff', labelKey: 'spaceweather' },
+  fires:        { icon: '🔥', color: '#ff8800', labelKey: 'fires' },
+  weather:      { icon: '⚠️', color: '#ffaa00', labelKey: 'weather' },
 };
 
 const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('overview');
   const [serverStats, setServerStats] = useState(null);
 
@@ -166,7 +145,6 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
   const analytics = useMemo(() => {
     if (!data) return null;
 
-    // Type counts
     const typeCounts = {};
     const typeColors = [];
     const typeLabels = [];
@@ -176,7 +154,8 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
       const count = data[type]?.length || 0;
       typeCounts[type] = count;
       typeColors.push(DISASTER_META[type]?.color || '#888');
-      typeLabels.push(DISASTER_META[type]?.label?.slice(0, 5) || type.slice(0, 5));
+      // Use first 5 chars of the translated label for the chart
+      typeLabels.push((t(DISASTER_META[type]?.labelKey) || type).slice(0, 5));
     });
 
     // Country leaderboard
@@ -217,12 +196,11 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
       });
     });
 
-    // Total events
     const totalEvents = mainTypes.reduce((sum, type) => sum + (data[type]?.length || 0), 0);
 
     return {
       typeCounts,
-      typeValues: mainTypes.map(t => typeCounts[t]),
+      typeValues: mainTypes.map(tp => typeCounts[tp]),
       typeColors,
       typeLabels,
       topCountries,
@@ -230,13 +208,13 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
       activeCount,
       endedCount,
       totalEvents,
-      donutSegments: mainTypes.filter(t => typeCounts[t] > 0).map(t => ({
-        value: typeCounts[t],
-        color: DISASTER_META[t]?.color || '#888',
-        label: DISASTER_META[t]?.label || t
+      donutSegments: mainTypes.filter(tp => typeCounts[tp] > 0).map(tp => ({
+        value: typeCounts[tp],
+        color: DISASTER_META[tp]?.color || '#888',
+        label: t(DISASTER_META[tp]?.labelKey) || tp
       }))
     };
-  }, [data]);
+  }, [data, t]);
 
   if (!isOpen || !analytics) return null;
 
@@ -248,15 +226,22 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
     Inactive: '#666'
   };
 
+  const tabNames = {
+    overview: t('overview'),
+    countries: t('countries'),
+    severity: t('severityTab'),
+    sources: t('sourcesTab')
+  };
+
   return (
     <div className="analytics-overlay" onClick={onClose}>
-      <div className="analytics-panel" onClick={e => e.stopPropagation()} role="dialog" aria-label="Analytics Dashboard" aria-modal="true">
+      <div className="analytics-panel" onClick={e => e.stopPropagation()} role="dialog" aria-label={t('analytics')} aria-modal="true">
         
         {/* Header */}
         <div className="analytics-header">
           <div className="analytics-title-row">
-            <h2 className="analytics-title">📊 Analytics</h2>
-            <button className="analytics-close" onClick={onClose} aria-label="Close analytics">✕</button>
+            <h2 className="analytics-title">📊 {t('analytics')}</h2>
+            <button className="analytics-close" onClick={onClose} aria-label={t('close')}>✕</button>
           </div>
           <div className="analytics-tabs" role="tablist">
             {['overview', 'countries', 'severity', 'sources'].map(tab => (
@@ -267,7 +252,7 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
                 role="tab"
                 aria-selected={activeTab === tab}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tabNames[tab]}
               </button>
             ))}
           </div>
@@ -280,26 +265,26 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
           {activeTab === 'overview' && (
             <div className="analytics-section">
               <div className="analytics-hero">
-                <DonutChart segments={analytics.donutSegments} size={120} />
+                <DonutChart segments={analytics.donutSegments} size={120} eventsLabel={t('events')} />
                 <div className="analytics-hero-stats">
                   <div className="hero-stat">
                     <span className="hero-stat-val" style={{ color: '#00ff88' }}>{analytics.activeCount}</span>
-                    <span className="hero-stat-label">Active</span>
+                    <span className="hero-stat-label">{t('active')}</span>
                   </div>
                   <div className="hero-stat">
                     <span className="hero-stat-val" style={{ color: '#666' }}>{analytics.endedCount}</span>
-                    <span className="hero-stat-label">Ended</span>
+                    <span className="hero-stat-label">{t('ended')}</span>
                   </div>
                   <div className="hero-stat">
                     <span className="hero-stat-val" style={{ color: connected ? '#00ff88' : '#ff4444' }}>
                       {connected ? '●' : '○'}
                     </span>
-                    <span className="hero-stat-label">{connected ? 'Live' : 'Offline'}</span>
+                    <span className="hero-stat-label">{connected ? t('live') : t('offline')}</span>
                   </div>
                 </div>
               </div>
 
-              <h3 className="analytics-subtitle">Events by Type</h3>
+              <h3 className="analytics-subtitle">{t('eventsByType')}</h3>
               <div className="analytics-chart-container">
                 <SparkBar
                   values={analytics.typeValues}
@@ -316,7 +301,7 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
                   <div className="analytics-type-card" key={type}>
                     <span className="type-card-icon">{DISASTER_META[type]?.icon}</span>
                     <span className="type-card-count" style={{ color: DISASTER_META[type]?.color }}>{count}</span>
-                    <span className="type-card-label">{DISASTER_META[type]?.label}</span>
+                    <span className="type-card-label">{t(DISASTER_META[type]?.labelKey)}</span>
                   </div>
                 ))}
               </div>
@@ -326,7 +311,7 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
           {/* ── COUNTRIES TAB ── */}
           {activeTab === 'countries' && (
             <div className="analytics-section">
-              <h3 className="analytics-subtitle">Most Affected Regions</h3>
+              <h3 className="analytics-subtitle">{t('mostAffectedRegions')}</h3>
               <div className="country-leaderboard">
                 {analytics.topCountries.map(([country, info], idx) => {
                   const maxCount = analytics.topCountries[0]?.[1]?.total || 1;
@@ -356,7 +341,7 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
                   );
                 })}
                 {analytics.topCountries.length === 0 && (
-                  <p className="analytics-empty">No country data available yet.</p>
+                  <p className="analytics-empty">{t('noCountryData')}</p>
                 )}
               </div>
             </div>
@@ -365,7 +350,7 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
           {/* ── SEVERITY TAB ── */}
           {activeTab === 'severity' && (
             <div className="analytics-section">
-              <h3 className="analytics-subtitle">Severity Distribution</h3>
+              <h3 className="analytics-subtitle">{t('severityDistribution')}</h3>
               <div className="severity-grid">
                 {Object.entries(analytics.severityCounts).filter(([_, c]) => c > 0).map(([level, count]) => (
                   <div className="severity-card" key={level} style={{ borderColor: sevColors[level] }}>
@@ -376,7 +361,7 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
                 ))}
               </div>
               
-              <h3 className="analytics-subtitle" style={{ marginTop: 24 }}>Severity Bar</h3>
+              <h3 className="analytics-subtitle" style={{ marginTop: 24 }}>{t('severityBar')}</h3>
               <div className="severity-stacked-bar">
                 {Object.entries(analytics.severityCounts).filter(([_, c]) => c > 0).map(([level, count]) => {
                   const totalSev = Object.values(analytics.severityCounts).reduce((s, c) => s + c, 0);
@@ -405,32 +390,32 @@ const AnalyticsDashboard = ({ data, isOpen, onClose, connected }) => {
           {/* ── SOURCES TAB ── */}
           {activeTab === 'sources' && (
             <div className="analytics-section">
-              <h3 className="analytics-subtitle">Data Source Health</h3>
+              <h3 className="analytics-subtitle">{t('dataSourceHealth')}</h3>
               {serverStats?.data ? (
                 <div className="source-health-grid">
                   {Object.entries(serverStats.data).map(([type, info]) => (
                     <div className="source-health-card" key={type}>
                       <div className="source-health-header">
                         <span>{DISASTER_META[type]?.icon || '❓'}</span>
-                        <span className="source-name">{DISASTER_META[type]?.label || type}</span>
+                        <span className="source-name">{t(DISASTER_META[type]?.labelKey) || type}</span>
                         <span className={`source-status ${info.hasData ? 'online' : 'offline'}`}>
-                          {info.hasData ? '● OK' : '○ NO DATA'}
+                          {info.hasData ? `● ${t('ok')}` : `○ ${t('noDataLabel')}`}
                         </span>
                       </div>
                       <div className="source-health-details">
-                        <span>Count: {info.count}</span>
-                        <span>Updated: {info.lastUpdate ? new Date(info.lastUpdate).toLocaleTimeString() : 'Never'}</span>
+                        <span>{t('count')}: {info.count}</span>
+                        <span>{t('updated')}: {info.lastUpdate ? new Date(info.lastUpdate).toLocaleTimeString() : t('never')}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="analytics-empty">Loading server stats...</p>
+                <p className="analytics-empty">{t('loadingServerStats')}</p>
               )}
               
               {serverStats?.lastFetch && (
                 <>
-                  <h3 className="analytics-subtitle" style={{ marginTop: 24 }}>Last Fetch Times</h3>
+                  <h3 className="analytics-subtitle" style={{ marginTop: 24 }}>{t('lastFetchTimes')}</h3>
                   <div className="fetch-times-grid">
                     {Object.entries(serverStats.lastFetch).map(([source, time]) => (
                       <div className="fetch-time-row" key={source}>

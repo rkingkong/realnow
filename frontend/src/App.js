@@ -1,22 +1,7 @@
-// App.js - v5.0 COMPLETE
+// App.js - v5.2 COMPLETE i18n
 // ═══════════════════════════════════════════════════════════
-// Carries forward ALL v4.0 features:
-//   Marker rendering, Location Search, Watch Area, Heatmap,
-//   Event Detail Drawer, Timeline Scrubber, LiveFeed,
-//   StatsDashboard, PWA/Offline, Sharing/Deep Links,
-//   Region Statistics, Sound/Notification Alerts, Mobile Menu
-//
-// NEW v5.0 enhancements:
-//   1. Map Style Switcher (dark/satellite/terrain/light)
-//   2. Disaster Polygon Overlays (flood/wildfire/drought zones)
-//   3. Cyclone Wind Radius Circles
-//   4. Grid-based Marker Clustering (fires layer)
-//   5. Analytics Dashboard (donut charts, severity, countries, sources)
-//   6. User Preferences Panel (language, alerts, digest, map style)
-//   7. Smart Proximity Alerts (distance-aware notifications)
-//   8. Internationalization (7 languages + RTL)
-//   9. Accessibility (skip-nav, focus-visible, reduced-motion, aria)
-//  10. v5 CSS theme + responsive
+// Carries forward ALL v4.0 + v5.0 features
+// v5.2: Complete internationalization across ALL components
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -36,14 +21,10 @@ import ClusterLayer from './components/ClusterLayer';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import PreferencesPanel from './components/PreferencesPanel';
 import { useSmartAlerts } from './components/SmartAlerts';
-import { I18nProvider } from './i18n/i18n';
 
 // =====================================================================
 // DISASTER CONFIGURATION
 // =====================================================================
-
-
-
 const DISASTER_CONFIG = {
   earthquakes: { 
     color: '#ff4444', icon: '🌍', nameKey: 'earthquakes', enabled: true,
@@ -237,7 +218,6 @@ const getRelativeTime = (timestamp) => {
   return new Date(t).toLocaleDateString();
 };
 
-// ─── HELPER: Severity color class ─────────────────────────────────
 const getSeverityColorClass = (level) => {
   if (!level) return '';
   const l = level.toLowerCase();
@@ -398,7 +378,7 @@ const registerServiceWorker = () => {
 };
 
 // =====================================================================
-// URL SHARING — read/write deep link params
+// URL SHARING
 // =====================================================================
 const getShareParams = () => {
   const params = new URLSearchParams(window.location.search);
@@ -473,6 +453,7 @@ const useRealtimeData = () => {
 // LOCATION SEARCH COMPONENT
 // =====================================================================
 const LocationSearch = ({ onSelect, onWatchArea }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -517,17 +498,17 @@ const LocationSearch = ({ onSelect, onWatchArea }) => {
   };
 
   return (
-    <div className="search-container" role="search" aria-label="Location search">
+    <div className="search-container" role="search" aria-label={t('searchLocation')}>
       <div className="search-input-row">
         <span className="search-icon" aria-hidden="true">🔍</span>
         <input
-          type="text" className="search-input" placeholder="Search location..."
-          value={query} aria-label="Search for a location"
+          type="text" className="search-input" placeholder={t('searchLocation')}
+          value={query} aria-label={t('searchLocation')}
           onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
           onFocus={() => results.length > 0 && setIsOpen(true)}
         />
         {query && (
-          <button className="search-clear" onClick={() => { setQuery(''); setResults([]); setIsOpen(false); }} aria-label="Clear search">✕</button>
+          <button className="search-clear" onClick={() => { setQuery(''); setResults([]); setIsOpen(false); }} aria-label={t('close')}>✕</button>
         )}
       </div>
       {isOpen && (
@@ -625,10 +606,11 @@ const HeatmapLayer = ({ data, enabledLayers }) => {
 };
 
 // =====================================================================
-// EVENT DETAIL DRAWER
+// EVENT DETAIL DRAWER — FULLY i18n
 // =====================================================================
 const DetailDrawer = ({ item, type, onClose, onShare }) => {
-  // v5: Keyboard support — Escape to close (must be before early return)
+  const { t } = useTranslation();
+
   useEffect(() => {
     if (!item || !type) return;
     const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -646,7 +628,7 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
-      if (onShare) onShare('Link copied!');
+      if (onShare) onShare(t('linkCopied'));
     }).catch(() => {
       const input = document.createElement('input');
       input.value = shareUrl;
@@ -654,23 +636,23 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
       input.select();
       document.execCommand('copy');
       document.body.removeChild(input);
-      if (onShare) onShare('Link copied!');
+      if (onShare) onShare(t('linkCopied'));
     });
   };
 
   return (
-    <div className="detail-drawer" role="dialog" aria-label="Event details">
+    <div className="detail-drawer" role="dialog" aria-label={t('viewDetails')}>
       <div className="drawer-header">
         <div className="drawer-icon-title">
           <span className="drawer-icon" aria-hidden="true">{config?.icon}</span>
           <div>
             <h3 className="drawer-title">
-              {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || config?.name)}
+              {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || t(config?.nameKey))}
             </h3>
             <span className={`drawer-severity sev-${severity.toLowerCase().replace(/ /g, '-')}`}>{severity}</span>
           </div>
         </div>
-        <button className="drawer-close" onClick={onClose} aria-label="Close details">✕</button>
+        <button className="drawer-close" onClick={onClose} aria-label={t('close')}>✕</button>
       </div>
 
       <div className="drawer-body">
@@ -679,61 +661,61 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'earthquakes' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📊 Seismic Data</h4>
-              <div className="drawer-row"><span>Magnitude</span><strong>M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</strong></div>
-              <div className="drawer-row"><span>Depth</span><strong>{item.depth?.toFixed(1)} km — {item.depthClass || ''}</strong></div>
-              {item.significance > 0 && <div className="drawer-row"><span>Significance</span><strong>{item.significance} / 1000</strong></div>}
-              {item.gap && <div className="drawer-row"><span>Azimuthal Gap</span><strong>{item.gap.toFixed(0)}°</strong></div>}
-              {item.rms && <div className="drawer-row"><span>RMS Residual</span><strong>{item.rms.toFixed(2)} sec</strong></div>}
-              {item.nst && <div className="drawer-row"><span>Stations Used</span><strong>{item.nst}</strong></div>}
+              <h4 className="drawer-section-title">📊 {t('seismicData')}</h4>
+              <div className="drawer-row"><span>{t('magnitude')}</span><strong>M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</strong></div>
+              <div className="drawer-row"><span>{t('depth')}</span><strong>{item.depth?.toFixed(1)} km — {item.depthClass || ''}</strong></div>
+              {item.significance > 0 && <div className="drawer-row"><span>{t('significance')}</span><strong>{item.significance} / 1000</strong></div>}
+              {item.gap && <div className="drawer-row"><span>{t('azimuthalGap')}</span><strong>{item.gap.toFixed(0)}°</strong></div>}
+              {item.rms && <div className="drawer-row"><span>{t('rmsResidual')}</span><strong>{item.rms.toFixed(2)} sec</strong></div>}
+              {item.nst && <div className="drawer-row"><span>{t('stationsUsed')}</span><strong>{item.nst}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🏘️ Impact Assessment</h4>
+              <h4 className="drawer-section-title">🏘️ {t('impactAssessment')}</h4>
               {item.mmi > 0 && (
                 <div className="drawer-row">
-                  <span>Max Shaking (MMI)</span>
+                  <span>{t('maxShaking')}</span>
                   <strong className={getSeverityColorClass(item.intensityDesc)}>
-                    {item.mmi.toFixed(1)} — {item.intensityDesc || 'Unknown'}
+                    {item.mmi.toFixed(1)} — {item.intensityDesc || t('unknown')}
                   </strong>
                 </div>
               )}
               {item.cdi > 0 && (
-                <div className="drawer-row"><span>Community Intensity</span><strong>{item.cdi.toFixed(1)}</strong></div>
+                <div className="drawer-row"><span>{t('communityIntensity')}</span><strong>{item.cdi.toFixed(1)}</strong></div>
               )}
-              {item.felt > 0 && <div className="drawer-row"><span>Felt Reports</span><strong>{formatNumber(item.felt)} people</strong></div>}
+              {item.felt > 0 && <div className="drawer-row"><span>{t('feltReports')}</span><strong>{formatNumber(item.felt)} {t('reports')}</strong></div>}
               {item.alert && (
                 <div className="drawer-row">
-                  <span>PAGER Alert</span>
+                  <span>{t('pagerAlert')}</span>
                   <strong className={`alert-${item.alert}`}>{item.alert.toUpperCase()}</strong>
                 </div>
               )}
-              {item.tsunami === 1 && <div className="drawer-alert tsunami">⚠️ TSUNAMI WARNING ISSUED</div>}
+              {item.tsunami === 1 && <div className="drawer-alert tsunami">⚠️ {t('tsunamiWarning')}</div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">ℹ️ Details</h4>
-              <div className="drawer-row"><span>Status</span><strong>{item.status === 'reviewed' ? '✅ Reviewed' : '⏳ Automatic'}</strong></div>
-              {item.net && <div className="drawer-row"><span>Network</span><strong>{item.net.toUpperCase()}</strong></div>}
-              {item.time && <div className="drawer-row"><span>Time</span><strong>{formatTime(item.time)} ({getRelativeTime(item.time)})</strong></div>}
-              {item.updated && <div className="drawer-row"><span>Updated</span><strong>{getRelativeTime(item.updated)}</strong></div>}
+              <h4 className="drawer-section-title">ℹ️ {t('details')}</h4>
+              <div className="drawer-row"><span>{t('status')}</span><strong>{item.status === 'reviewed' ? '✅ Reviewed' : '⏳ Automatic'}</strong></div>
+              {item.net && <div className="drawer-row"><span>{t('network')}</span><strong>{item.net.toUpperCase()}</strong></div>}
+              {item.time && <div className="drawer-row"><span>{t('time')}</span><strong>{formatTime(item.time)} ({getRelativeTime(item.time)})</strong></div>}
+              {item.updated && <div className="drawer-row"><span>{t('updated')}</span><strong>{getRelativeTime(item.updated)}</strong></div>}
             </div>
           </>
         )}
 
-        {/* ═══ CYCLONES / HURRICANES / TYPHOONS ═══ */}
+        {/* ═══ CYCLONES ═══ */}
         {type === 'cyclones' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🌀 Storm Classification</h4>
-              <div className="drawer-row"><span>Type</span><strong>{item.stormType}</strong></div>
-              <div className="drawer-row"><span>Category</span><strong>{item.category}</strong></div>
+              <h4 className="drawer-section-title">🌀 {t('stormClassification')}</h4>
+              <div className="drawer-row"><span>{t('stormType')}</span><strong>{item.stormType}</strong></div>
+              <div className="drawer-row"><span>{t('category')}</span><strong>{item.category}</strong></div>
               {item.saffirSimpson && (
                 <div className="drawer-row"><span>Saffir-Simpson</span><strong>{item.saffirSimpson}</strong></div>
               )}
               {item.alertLevel && (
                 <div className="drawer-row">
-                  <span>GDACS Alert</span>
+                  <span>{t('alertLevel')}</span>
                   <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel} {item.alertScore ? `(${item.alertScore.toFixed(1)})` : ''}</strong>
                 </div>
               )}
@@ -743,41 +725,41 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">💨 Wind & Pressure</h4>
+              <h4 className="drawer-section-title">💨 {t('windAndPressure')}</h4>
               {item.windSpeed > 0 && (
-                <div className="drawer-row"><span>Wind Speed</span><strong>{item.windSpeed} km/h ({Math.round(item.windSpeed * 0.621)} mph)</strong></div>
+                <div className="drawer-row"><span>{t('windSpeed')}</span><strong>{item.windSpeed} km/h ({Math.round(item.windSpeed * 0.621)} mph)</strong></div>
               )}
-              {item.beaufort > 0 && <div className="drawer-row"><span>Beaufort Scale</span><strong>Force {item.beaufort}</strong></div>}
+              {item.beaufort > 0 && <div className="drawer-row"><span>{t('beaufortScale')}</span><strong>Force {item.beaufort}</strong></div>}
               {item.pressure > 0 && (
-                <div className="drawer-row"><span>Pressure</span><strong>{item.pressure} hPa {item.pressureDesc ? `— ${item.pressureDesc}` : ''}</strong></div>
+                <div className="drawer-row"><span>{t('pressure')}</span><strong>{item.pressure} hPa {item.pressureDesc ? `— ${item.pressureDesc}` : ''}</strong></div>
               )}
-              {item.maxWindRadius > 0 && <div className="drawer-row"><span>Max Wind Radius</span><strong>{item.maxWindRadius} km</strong></div>}
+              {item.maxWindRadius > 0 && <div className="drawer-row"><span>{t('maxWindRadius')}</span><strong>{item.maxWindRadius} km</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🧭 Movement & Duration</h4>
-              {item.movementDesc && <div className="drawer-row"><span>Movement</span><strong>{item.movementDesc}</strong></div>}
+              <h4 className="drawer-section-title">🧭 {t('movementDuration')}</h4>
+              {item.movementDesc && <div className="drawer-row"><span>{t('movement')}</span><strong>{item.movementDesc}</strong></div>}
               {!item.movementDesc && item.direction > 0 && (
-                <div className="drawer-row"><span>Heading</span><strong>{item.direction}° at {item.speed} km/h</strong></div>
+                <div className="drawer-row"><span>{t('heading')}</span><strong>{item.direction}° at {item.speed} km/h</strong></div>
               )}
-              {item.durationDays && <div className="drawer-row"><span>Duration</span><strong>{item.durationDays} day{item.durationDays > 1 ? 's' : ''}</strong></div>}
-              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
-              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              {item.durationDays && <div className="drawer-row"><span>{t('duration')}</span><strong>{item.durationDays} {t('day')}{item.durationDays > 1 ? 's' : ''}</strong></div>}
+              {item.fromDate && <div className="drawer-row"><span>{t('started')}</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>{t('ended')}</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🏘️ Impact</h4>
-              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              <h4 className="drawer-section-title">🏘️ {t('impact')}</h4>
+              {item.country && <div className="drawer-row"><span>{t('country')}</span><strong>{item.country}</strong></div>}
               {item.affectedCountries?.length > 1 && (
-                <div className="drawer-row"><span>Affected Countries</span><strong>{item.affectedCountries.join(', ')}</strong></div>
+                <div className="drawer-row"><span>{t('affectedCountries')}</span><strong>{item.affectedCountries.join(', ')}</strong></div>
               )}
-              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
-              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>{t('popAtRisk')}</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>{t('affectedArea')}</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
             </div>
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -788,42 +770,42 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'floods' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🌊 Flood Status</h4>
+              <h4 className="drawer-section-title">🌊 {t('floodData')}</h4>
               {floodInfo?.isActive ? (
-                <div className="drawer-status-badge active">🔴 ACTIVE — Day {floodInfo.daysActive}</div>
+                <div className="drawer-status-badge active">🔴 {t('active')} — {t('day')} {floodInfo.daysActive}</div>
               ) : (
-                <div className="drawer-status-badge contained">⚪ {floodInfo?.statusLabel || 'Ended'}</div>
+                <div className="drawer-status-badge contained">⚪ {floodInfo?.statusLabel || t('ended')}</div>
               )}
               {item.alertLevel && (
                 <div className="drawer-row">
-                  <span>GDACS Alert</span>
+                  <span>{t('alertLevel')}</span>
                   <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel} {item.severityScore ? `(${item.severityScore.toFixed(1)})` : (item.alertScore ? `(${item.alertScore})` : '')}</strong>
                 </div>
               )}
-              {item.severity && typeof item.severity === 'string' && <div className="drawer-row"><span>Severity</span><strong>{item.severity}</strong></div>}
+              {item.severity && typeof item.severity === 'string' && <div className="drawer-row"><span>{t('severity')}</span><strong>{item.severity}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📊 Extent & Impact</h4>
-              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              <h4 className="drawer-section-title">📊 {t('extentImpact')}</h4>
+              {item.country && <div className="drawer-row"><span>{t('country')}</span><strong>{item.country}</strong></div>}
               {item.affectedCountries?.length > 1 && (
-                <div className="drawer-row"><span>Affected Countries</span><strong>{item.affectedCountries.join(', ')}</strong></div>
+                <div className="drawer-row"><span>{t('affectedCountries')}</span><strong>{item.affectedCountries.join(', ')}</strong></div>
               )}
-              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
-              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>{t('popAtRisk')}</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>{t('affectedArea')}</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📅 Timeline</h4>
-              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
-              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
-              {item.durationDays && <div className="drawer-row"><span>Duration</span><strong>{item.durationDays} day{item.durationDays > 1 ? 's' : ''}</strong></div>}
-              {item.lastUpdate && <div className="drawer-row"><span>Last Update</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
+              <h4 className="drawer-section-title">📅 {t('timeline')}</h4>
+              {item.fromDate && <div className="drawer-row"><span>{t('started')}</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>{t('ended')}</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              {item.durationDays && <div className="drawer-row"><span>{t('duration')}</span><strong>{item.durationDays} {t('day')}{item.durationDays > 1 ? 's' : ''}</strong></div>}
+              {item.lastUpdate && <div className="drawer-row"><span>{t('lastUpdate')}</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
             </div>
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -834,37 +816,37 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'wildfires' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🔥 Fire Status</h4>
+              <h4 className="drawer-section-title">🔥 {t('fireStatus')}</h4>
               <div className={`drawer-status-badge ${item.isActive ? 'active' : 'contained'}`}>
-                {item.isActive ? '🔥 ACTIVELY BURNING' : item.status === 'just_ended' ? '🟡 JUST CONTAINED' : '✅ CONTAINED'}
+                {item.isActive ? `🔥 ${t('activelyBurning')}` : item.status === 'just_ended' ? `🟡 ${t('justContained')}` : `✅ ${t('contained')}`}
               </div>
               {item.alertLevel && (
                 <div className="drawer-row">
-                  <span>GDACS Alert</span>
+                  <span>{t('alertLevel')}</span>
                   <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong>
                 </div>
               )}
-              {item.alertScore > 0 && <div className="drawer-row"><span>Alert Score</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
+              {item.alertScore > 0 && <div className="drawer-row"><span>{t('alertScore')}</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📊 Extent & Impact</h4>
-              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
-              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
+              <h4 className="drawer-section-title">📊 {t('extentImpact')}</h4>
+              {item.affectedArea > 0 && <div className="drawer-row"><span>{t('affectedArea')}</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+              {item.country && <div className="drawer-row"><span>{t('country')}</span><strong>{item.country}</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>{t('popAtRisk')}</span><strong>{formatNumber(item.population)}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📅 Timeline</h4>
-              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
-              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
-              {item.daysSinceStart !== null && item.isActive && <div className="drawer-row"><span>Active For</span><strong>{item.daysSinceStart} days</strong></div>}
-              {item.lastUpdate && <div className="drawer-row"><span>Last Update</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
+              <h4 className="drawer-section-title">📅 {t('timeline')}</h4>
+              {item.fromDate && <div className="drawer-row"><span>{t('started')}</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>{t('ended')}</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              {item.daysSinceStart !== null && item.isActive && <div className="drawer-row"><span>{t('activeFor')}</span><strong>{item.daysSinceStart} {t('day')}s</strong></div>}
+              {item.lastUpdate && <div className="drawer-row"><span>{t('lastUpdate')}</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
             </div>
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -875,40 +857,40 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'volcanoes' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🌋 Volcanic Activity</h4>
+              <h4 className="drawer-section-title">🌋 {t('volcanoData')}</h4>
               <div className={`drawer-status-badge ${!item.isClosed ? 'active' : 'contained'}`}>
-                {!item.isClosed ? '🔴 ACTIVE' : '⚪ INACTIVE'}
+                {!item.isClosed ? `🔴 ${t('active')}` : `⚪ ${t('inactive')}`}
               </div>
               {item.alertLevel && (
                 <div className="drawer-row">
-                  <span>Alert Level</span>
+                  <span>{t('alertLevel')}</span>
                   <strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong>
                 </div>
               )}
-              {item.vei > 0 && <div className="drawer-row"><span>VEI (Explosivity)</span><strong>{item.vei} / 8</strong></div>}
-              {item.alertScore > 0 && <div className="drawer-row"><span>GDACS Score</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
+              {item.vei > 0 && <div className="drawer-row"><span>VEI</span><strong>{item.vei} / 8</strong></div>}
+              {item.alertScore > 0 && <div className="drawer-row"><span>GDACS</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📍 Location & Impact</h4>
-              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-              {item.elevation > 0 && <div className="drawer-row"><span>Elevation</span><strong>{formatNumber(item.elevation)} m</strong></div>}
-              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
-              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+              <h4 className="drawer-section-title">📍 {t('locationImpact')}</h4>
+              {item.country && <div className="drawer-row"><span>{t('country')}</span><strong>{item.country}</strong></div>}
+              {item.elevation > 0 && <div className="drawer-row"><span>{t('elevation')}</span><strong>{formatNumber(item.elevation)} m</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>{t('popAtRisk')}</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>{t('affectedArea')}</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📅 Timeline</h4>
-              {item.startDate && <div className="drawer-row"><span>First Observed</span><strong>{new Date(item.startDate).toLocaleDateString()}</strong></div>}
-              {item.lastObserved && <div className="drawer-row"><span>Last Observed</span><strong>{new Date(item.lastObserved).toLocaleDateString()} ({getRelativeTime(item.lastObserved)})</strong></div>}
-              {item.durationDays && <div className="drawer-row"><span>Duration</span><strong>{item.durationDays} day{item.durationDays > 1 ? 's' : ''}</strong></div>}
-              {item.geometryCount > 1 && <div className="drawer-row"><span>Observations</span><strong>{item.geometryCount} data points</strong></div>}
-              {item.closedDate && <div className="drawer-row"><span>Closed</span><strong>{new Date(item.closedDate).toLocaleDateString()}</strong></div>}
+              <h4 className="drawer-section-title">📅 {t('timeline')}</h4>
+              {item.startDate && <div className="drawer-row"><span>{t('firstObserved')}</span><strong>{new Date(item.startDate).toLocaleDateString()}</strong></div>}
+              {item.lastObserved && <div className="drawer-row"><span>{t('lastObserved')}</span><strong>{new Date(item.lastObserved).toLocaleDateString()} ({getRelativeTime(item.lastObserved)})</strong></div>}
+              {item.durationDays && <div className="drawer-row"><span>{t('duration')}</span><strong>{item.durationDays} {t('day')}{item.durationDays > 1 ? 's' : ''}</strong></div>}
+              {item.geometryCount > 1 && <div className="drawer-row"><span>{t('observations')}</span><strong>{item.geometryCount}</strong></div>}
+              {item.closedDate && <div className="drawer-row"><span>{t('closed')}</span><strong>{new Date(item.closedDate).toLocaleDateString()}</strong></div>}
             </div>
 
             {item.sources?.length > 0 && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📚 Sources</h4>
+                <h4 className="drawer-section-title">📚 {t('sources')}</h4>
                 {item.sources.map((src, i) => (
                   <div key={i} className="drawer-row">
                     <span>{src.id}</span>
@@ -920,7 +902,7 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -931,20 +913,19 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'weather' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">⚠️ Alert Details</h4>
+              <h4 className="drawer-section-title">⚠️ {t('alertDetails')}</h4>
               <div className={`drawer-status-badge ${item.severity === 'Extreme' || item.severity === 'Severe' ? 'active' : 'contained'}`}>
                 {item.severity === 'Extreme' ? '🔴' : item.severity === 'Severe' ? '🟠' : item.severity === 'Moderate' ? '🟡' : '🟢'} {item.severity} — {item.urgency}
               </div>
-              <div className="drawer-row"><span>Event</span><strong>{item.event}</strong></div>
-              {item.certainty && <div className="drawer-row"><span>Certainty</span><strong>{item.certainty}</strong></div>}
-              {item.response && <div className="drawer-row"><span>Response</span><strong>{item.response}</strong></div>}
-              {item.status && <div className="drawer-row"><span>Status</span><strong>{item.status}</strong></div>}
+              <div className="drawer-row"><span>{t('event')}</span><strong>{item.event}</strong></div>
+              {item.certainty && <div className="drawer-row"><span>{t('certainty')}</span><strong>{item.certainty}</strong></div>}
+              {item.response && <div className="drawer-row"><span>{t('response')}</span><strong>{item.response}</strong></div>}
+              {item.status && <div className="drawer-row"><span>{t('status')}</span><strong>{item.status}</strong></div>}
             </div>
 
-            {/* Threat Parameters */}
             {(item.parameters?.maxWindGust || item.parameters?.maxHailSize || item.parameters?.tornadoDetection) && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">🌪️ Threat Parameters</h4>
+                <h4 className="drawer-section-title">🌪️ {t('parameters')}</h4>
                 {item.parameters.windThreat && <div className="drawer-row"><span>Wind Threat</span><strong>{item.parameters.windThreat}</strong></div>}
                 {item.parameters.maxWindGust && <div className="drawer-row"><span>Max Wind Gust</span><strong>{item.parameters.maxWindGust}</strong></div>}
                 {item.parameters.hailThreat && <div className="drawer-row"><span>Hail Threat</span><strong>{item.parameters.hailThreat}</strong></div>}
@@ -957,31 +938,31 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
             )}
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📍 Area & Timing</h4>
-              {item.areas && <div className="drawer-row"><span>Areas</span><strong className="drawer-areas">{item.areas}</strong></div>}
-              {item.onset && <div className="drawer-row"><span>Onset</span><strong>{new Date(item.onset).toLocaleString()}</strong></div>}
-              {item.expires && <div className="drawer-row"><span>Expires</span><strong>{new Date(item.expires).toLocaleString()}</strong></div>}
-              {item.timeRemaining && <div className="drawer-row"><span>Time Left</span><strong className="text-orange">{item.timeRemaining}</strong></div>}
-              {item.sender && <div className="drawer-row"><span>Issued By</span><strong>{item.sender}</strong></div>}
+              <h4 className="drawer-section-title">📍 {t('areaTiming')}</h4>
+              {item.areas && <div className="drawer-row"><span>{t('areas')}</span><strong className="drawer-areas">{item.areas}</strong></div>}
+              {item.onset && <div className="drawer-row"><span>{t('onset')}</span><strong>{new Date(item.onset).toLocaleString()}</strong></div>}
+              {item.expires && <div className="drawer-row"><span>{t('expires')}</span><strong>{new Date(item.expires).toLocaleString()}</strong></div>}
+              {item.timeRemaining && <div className="drawer-row"><span>{t('timeLeft')}</span><strong className="text-orange">{item.timeRemaining}</strong></div>}
+              {item.sender && <div className="drawer-row"><span>{t('issuedBy')}</span><strong>{item.sender}</strong></div>}
             </div>
 
             {item.parameters?.nwsHeadline && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📢 Headline</h4>
+                <h4 className="drawer-section-title">📢 {t('headline')}</h4>
                 <p className="drawer-description">{item.parameters.nwsHeadline}</p>
               </div>
             )}
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description drawer-description-long">{item.description}</p>
               </div>
             )}
 
             {item.instruction && (
               <div className="drawer-section drawer-instruction">
-                <h4 className="drawer-section-title">🛡️ Safety Instructions</h4>
+                <h4 className="drawer-section-title">🛡️ {t('instruction')}</h4>
                 <p className="drawer-description drawer-instruction-text">{item.instruction}</p>
               </div>
             )}
@@ -992,41 +973,41 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'droughts' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🏜️ Drought Status</h4>
+              <h4 className="drawer-section-title">🏜️ {t('droughtData')}</h4>
               <div className={`drawer-status-badge ${item.isActive !== false ? 'active' : 'contained'}`}>
-                {item.isActive !== false ? '🏜️ ACTIVE DROUGHT' : item.status === 'just_ended' ? '🟡 RECENTLY ENDED' : '✅ ENDED'}
+                {item.isActive !== false ? `🏜️ ${t('active')}` : item.status === 'just_ended' ? `🟡 ${t('justContained')}` : `✅ ${t('ended')}`}
               </div>
               {item.alertLevel && (
-                <div className="drawer-row"><span>Alert Level</span><strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong></div>
+                <div className="drawer-row"><span>{t('alertLevel')}</span><strong className={`alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</strong></div>
               )}
-              {item.severity && <div className="drawer-row"><span>Severity</span><strong>{item.severity}</strong></div>}
-              {item.alertScore > 0 && <div className="drawer-row"><span>GDACS Score</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
+              {item.severity && <div className="drawer-row"><span>{t('severity')}</span><strong>{item.severity}</strong></div>}
+              {item.alertScore > 0 && <div className="drawer-row"><span>GDACS</span><strong>{item.alertScore.toFixed(1)}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📊 Extent & Impact</h4>
-              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
+              <h4 className="drawer-section-title">📊 {t('extentImpact')}</h4>
+              {item.country && <div className="drawer-row"><span>{t('country')}</span><strong>{item.country}</strong></div>}
               {item.affectedCountries?.length > 1 && (
-                <div className="drawer-row"><span>Affected Countries</span><strong>{item.affectedCountries.join(', ')}</strong></div>
+                <div className="drawer-row"><span>{t('affectedCountries')}</span><strong>{item.affectedCountries.join(', ')}</strong></div>
               )}
-              {item.population > 0 && <div className="drawer-row"><span>Pop. at Risk</span><strong>{formatNumber(item.population)}</strong></div>}
-              {item.affectedArea > 0 && <div className="drawer-row"><span>Affected Area</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
+              {item.population > 0 && <div className="drawer-row"><span>{t('popAtRisk')}</span><strong>{formatNumber(item.population)}</strong></div>}
+              {item.affectedArea > 0 && <div className="drawer-row"><span>{t('affectedArea')}</span><strong>{formatNumber(item.affectedArea)} km²</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📅 Timeline</h4>
-              {item.fromDate && <div className="drawer-row"><span>Started</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
-              {item.toDate && <div className="drawer-row"><span>Ended</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
+              <h4 className="drawer-section-title">📅 {t('timeline')}</h4>
+              {item.fromDate && <div className="drawer-row"><span>{t('started')}</span><strong>{new Date(item.fromDate).toLocaleDateString()}</strong></div>}
+              {item.toDate && <div className="drawer-row"><span>{t('ended')}</span><strong>{new Date(item.toDate).toLocaleDateString()}</strong></div>}
               {item.daysSinceStart !== null && item.isActive !== false && (
-                <div className="drawer-row"><span>Active For</span><strong>{item.daysSinceStart} days</strong></div>
+                <div className="drawer-row"><span>{t('activeFor')}</span><strong>{item.daysSinceStart} {t('day')}s</strong></div>
               )}
-              {item.duration > 0 && <div className="drawer-row"><span>Duration</span><strong>{item.duration} days</strong></div>}
-              {item.lastUpdate && <div className="drawer-row"><span>Last Update</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
+              {item.duration > 0 && <div className="drawer-row"><span>{t('duration')}</span><strong>{item.duration} {t('day')}s</strong></div>}
+              {item.lastUpdate && <div className="drawer-row"><span>{t('lastUpdate')}</span><strong>{getRelativeTime(item.lastUpdate)}</strong></div>}
             </div>
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -1037,31 +1018,31 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'landslides' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">⛰️ Landslide Details</h4>
-              {item.fatalities > 0 && <div className="drawer-row"><span>Fatalities</span><strong className="text-red">{item.fatalities}</strong></div>}
-              {item.trigger && <div className="drawer-row"><span>Trigger</span><strong>{item.trigger}</strong></div>}
-              {item.severity && <div className="drawer-row"><span>Severity</span><strong>{item.severity}</strong></div>}
+              <h4 className="drawer-section-title">⛰️ {t('landslideData')}</h4>
+              {item.fatalities > 0 && <div className="drawer-row"><span>{t('fatalities')}</span><strong className="text-red">{item.fatalities}</strong></div>}
+              {item.trigger && <div className="drawer-row"><span>{t('trigger')}</span><strong>{item.trigger}</strong></div>}
+              {item.severity && <div className="drawer-row"><span>{t('severity')}</span><strong>{item.severity}</strong></div>}
             </div>
 
             <div className="drawer-section">
-              <h4 className="drawer-section-title">📍 Location</h4>
-              {item.country && <div className="drawer-row"><span>Country</span><strong>{item.country}</strong></div>}
-              {item.date && <div className="drawer-row"><span>Date</span><strong>{new Date(item.date).toLocaleDateString()}</strong></div>}
+              <h4 className="drawer-section-title">📍 {t('location')}</h4>
+              {item.country && <div className="drawer-row"><span>{t('country')}</span><strong>{item.country}</strong></div>}
+              {item.date && <div className="drawer-row"><span>{t('time')}</span><strong>{new Date(item.date).toLocaleDateString()}</strong></div>}
             </div>
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
 
             {item.sources?.length > 0 && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📚 Sources</h4>
+                <h4 className="drawer-section-title">📚 {t('sources')}</h4>
                 {item.sources.slice(0, 3).map((s, i) => (
                   <div key={i} className="drawer-row">
-                    <span>{s.id || 'Source'}</span>
+                    <span>{s.id || t('source')}</span>
                     <a href={s.url} target="_blank" rel="noopener noreferrer" className="drawer-link">View →</a>
                   </div>
                 ))}
@@ -1075,13 +1056,13 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
           <>
             <div className="drawer-section">
               <div className="drawer-alert tsunami">⚠️ {severity}</div>
-              {item.region && <div className="drawer-row"><span>Region</span><strong>{item.region}</strong></div>}
-              {item.date && <div className="drawer-row"><span>Time</span><strong>{new Date(item.date).toLocaleString()}</strong></div>}
+              {item.region && <div className="drawer-row"><span>{t('region')}</span><strong>{item.region}</strong></div>}
+              {item.date && <div className="drawer-row"><span>{t('time')}</span><strong>{new Date(item.date).toLocaleString()}</strong></div>}
             </div>
 
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -1092,12 +1073,12 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'spaceweather' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">☀️ Space Weather</h4>
+              <h4 className="drawer-section-title">☀️ {t('spaceweather')}</h4>
               {item.currentKp && <div className="drawer-row"><span>Kp Index</span><strong>{item.currentKp}</strong></div>}
             </div>
             {item.description && (
               <div className="drawer-section">
-                <h4 className="drawer-section-title">📝 Description</h4>
+                <h4 className="drawer-section-title">📝 {t('description')}</h4>
                 <p className="drawer-description">{item.description}</p>
               </div>
             )}
@@ -1108,37 +1089,37 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
         {type === 'fires' && (
           <>
             <div className="drawer-section">
-              <h4 className="drawer-section-title">🔥 Thermal Detection</h4>
-              <div className="drawer-row"><span>Brightness</span><strong>{item.brightness?.toFixed(1)} K</strong></div>
-              {item.frp > 0 && <div className="drawer-row"><span>Fire Radiative Power</span><strong>{item.frp.toFixed(1)} MW {item.intensity ? `— ${item.intensity}` : ''}</strong></div>}
-              {item.confidence && <div className="drawer-row"><span>Confidence</span><strong>{item.confidence}</strong></div>}
+              <h4 className="drawer-section-title">🔥 {t('thermalDetection')}</h4>
+              <div className="drawer-row"><span>{t('brightness')}</span><strong>{item.brightness?.toFixed(1)} K</strong></div>
+              {item.frp > 0 && <div className="drawer-row"><span>FRP</span><strong>{item.frp.toFixed(1)} MW {item.intensity ? `— ${item.intensity}` : ''}</strong></div>}
+              {item.confidence && <div className="drawer-row"><span>{t('confidence')}</span><strong>{item.confidence}</strong></div>}
               {item.satellite && <div className="drawer-row"><span>Satellite</span><strong>{item.satellite}</strong></div>}
               {item.instrument && <div className="drawer-row"><span>Instrument</span><strong>{item.instrument}</strong></div>}
               {(item.dayNight || item.daynight) && <div className="drawer-row"><span>Pass</span><strong>{(item.dayNight || item.daynight) === 'D' ? '☀️ Daytime' : '🌙 Nighttime'}</strong></div>}
-              {item.estimatedArea > 0 && <div className="drawer-row"><span>Est. Pixel Area</span><strong>{item.estimatedArea.toFixed(2)} km²</strong></div>}
+              {item.estimatedArea > 0 && <div className="drawer-row"><span>{t('estimatedArea')}</span><strong>{item.estimatedArea.toFixed(2)} km²</strong></div>}
             </div>
             <div className="drawer-section">
               <h4 className="drawer-section-title">📅 Detection</h4>
-              {item.date && <div className="drawer-row"><span>Date</span><strong>{item.date}</strong></div>}
-              {item.time && <div className="drawer-row"><span>Time (UTC)</span><strong>{item.time}</strong></div>}
+              {item.date && <div className="drawer-row"><span>{t('time')}</span><strong>{item.date}</strong></div>}
+              {item.time && <div className="drawer-row"><span>UTC</span><strong>{item.time}</strong></div>}
             </div>
           </>
         )}
 
         {/* ═══ COORDINATES (all types) ═══ */}
         <div className="drawer-section">
-          <h4 className="drawer-section-title">📍 Coordinates</h4>
+          <h4 className="drawer-section-title">📍 {t('coordinates')}</h4>
           <div className="drawer-row">
-            <span>Location</span>
-            <strong>{coords ? `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}` : 'Unknown'}</strong>
+            <span>{t('location')}</span>
+            <strong>{coords ? `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}` : t('unknown')}</strong>
           </div>
-          <div className="drawer-row"><span>Source</span><strong>{item.source || 'GDACS'}</strong></div>
+          <div className="drawer-row"><span>{t('source')}</span><strong>{item.source || 'GDACS'}</strong></div>
         </div>
 
         {/* ═══ EXTERNAL LINKS (all types) ═══ */}
         {(item.url || item.link || item.web) && (
           <div className="drawer-section">
-            <h4 className="drawer-section-title">🔗 External Links</h4>
+            <h4 className="drawer-section-title">🔗 {t('externalLinks')}</h4>
             {item.url && (
               <a href={item.url} target="_blank" rel="noopener noreferrer" className="drawer-ext-link">
                 View on {item.source || 'Source'} →
@@ -1159,16 +1140,18 @@ const DetailDrawer = ({ item, type, onClose, onShare }) => {
       </div>
 
       <div className="drawer-footer">
-        <button className="drawer-share-btn" onClick={handleCopyLink}>🔗 Copy Link</button>
+        <button className="drawer-share-btn" onClick={handleCopyLink}>🔗 {t('copyLink')}</button>
       </div>
     </div>
   );
 };
 
 // =====================================================================
-// REGION STATISTICS
+// REGION STATISTICS — i18n
 // =====================================================================
 const RegionStats = ({ data, watchArea }) => {
+  const { t } = useTranslation();
+
   const stats = useMemo(() => {
     if (!watchArea) return null;
     const { lat, lon, radius, name } = watchArea;
@@ -1197,19 +1180,19 @@ const RegionStats = ({ data, watchArea }) => {
     <div className="region-stats" role="complementary" aria-label="Watch area statistics">
       <div className="region-stats-header">
         <span className="region-name">📍 {stats.name}</span>
-        <span className="region-radius">{stats.radius}km radius</span>
+        <span className="region-radius">{stats.radius}km</span>
       </div>
       <div className="region-stats-body">
         {Object.entries(stats.results).map(([type, count]) => (
           <div key={type} className="region-stat-item">
             <span className="region-stat-icon">{DISASTER_CONFIG[type]?.icon}</span>
             <span className="region-stat-count">{count}</span>
-            <span className="region-stat-label">{DISASTER_CONFIG[type]?.name}</span>
+            <span className="region-stat-label">{t(DISASTER_CONFIG[type]?.nameKey)}</span>
           </div>
         ))}
       </div>
       <div className="region-stats-total">
-        {stats.total} event{stats.total !== 1 ? 's' : ''} within {stats.radius}km
+        {stats.total} {t('event')}{stats.total !== 1 ? 's' : ''} — {stats.radius}km
       </div>
     </div>
   );
@@ -1359,12 +1342,10 @@ const TimelineScrubber = ({ data, onTimeChange }) => {
 };
 
 // =====================================================================
-// STATS DASHBOARD
+// STATS DASHBOARD — FULLY i18n
 // =====================================================================
-
-const { t } = useTranslation();
-
 const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) => {
+  const { t } = useTranslation();
   const [isMinimized, setIsMinimized] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
 
@@ -1383,8 +1364,8 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
       case 'volcanoes': {
         const red = items.filter(v => v.alertLevel === 'Red').length;
         const orange = items.filter(v => v.alertLevel === 'Orange').length;
-        if (red > 0) details = `${red} erupting`;
-        if (orange > 0) details += (details ? ' · ' : '') + `${orange} warning`;
+        if (red > 0) details = `${red} ${t('erupting').toLowerCase()}`;
+        if (orange > 0) details += (details ? ' · ' : '') + `${orange} ${t('warning').toLowerCase()}`;
         severity = red > 0 ? 'EXTREME' : orange > 0 ? 'HIGH' : 'MODERATE';
         break;
       }
@@ -1398,7 +1379,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
       }
       case 'floods': {
         const active = items.filter(f => formatFloodInfo(f).isActive).length;
-        if (active > 0) details = `${active} active`;
+        if (active > 0) details = `${active} ${t('active').toLowerCase()}`;
         severity = active > 3 ? 'HIGH' : active > 0 ? 'MODERATE' : 'LOW';
         break;
       }
@@ -1409,13 +1390,13 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
         break;
       }
       case 'tsunamis': {
-        const warnings = items.filter(t => t.severity === 'Warning').length;
-        details = warnings > 0 ? `${warnings} warning${warnings > 1 ? 's' : ''}` : '';
+        const warnings = items.filter(tItem => tItem.severity === 'Warning').length;
+        details = warnings > 0 ? `${warnings} ${t('warning').toLowerCase()}${warnings > 1 ? 's' : ''}` : '';
         severity = warnings > 0 ? 'EXTREME' : 'MODERATE';
         break;
       }
       default: {
-        details = items.length > 5 ? `${items.length} events` : '';
+        details = items.length > 5 ? `${items.length} ${t('event').toLowerCase()}s` : '';
         severity = items.length > 10 ? 'HIGH' : 'MODERATE';
       }
     }
@@ -1440,11 +1421,11 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
   }
 
   return (
-    <div className="stats-dashboard enhanced" role="region" aria-label="Disaster statistics dashboard">
+    <div className="stats-dashboard enhanced" role="region" aria-label={t('disasterMonitor')}>
       <div className="dashboard-header">
         <div className="dashboard-title">
-          <span>📊 DISASTER MONITOR</span>
-          <span className="dashboard-subtitle">{connected ? '⚡ streaming' : '⏸ reconnecting...'}</span>
+          <span>📊 {t('disasterMonitor')}</span>
+          <span className="dashboard-subtitle">{connected ? `⚡ ${t('streamingLive').toLowerCase()}` : `⏸ ${t('reconnecting').toLowerCase()}`}</span>
         </div>
         <button className="minimize-toggle in-header" onClick={() => setIsMinimized(true)} aria-label="Minimize dashboard">—</button>
       </div>
@@ -1485,16 +1466,16 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
       {showAlerts && (
         <div className="alerts-section" role="alert">
           {data.volcanoes?.filter(v => v.alertLevel === 'Red').map((v, i) => (
-            <div key={`v${i}`} className="critical-alert volcano">🌋 ${t('erupting')}: {v.name} - {v.country}</div>
+            <div key={`v${i}`} className="critical-alert volcano">🌋 {t('erupting')}: {v.name} - {v.country}</div>
           ))}
           {data.cyclones?.filter(c => c.windSpeed > 119).map((c, i) => (
-            <div key={`c${i}`} className="critical-alert cyclone">🌀 ${t('cyclone')}: {c.name} - {c.windSpeed ? `${c.windSpeed} km/h` : ''}</div>
+            <div key={`c${i}`} className="critical-alert cyclone">🌀 {t('cyclone')}: {c.name} - {c.windSpeed ? `${c.windSpeed} km/h` : ''}</div>
           ))}
           {data.earthquakes?.filter(e => e.magnitude >= 6).slice(0, 3).map((eq, i) => (
             <div key={`e${i}`} className="critical-alert earthquake">🌍 M{eq.magnitude?.toFixed(1)} - {eq.place} - {formatTime(eq.time)}</div>
           ))}
-          {data.tsunamis?.filter(t => t.severity === 'Warning').map((t, i) => (
-            <div key={`t${i}`} className="critical-alert tsunami-alert">🌊 ${t('tsunami')}: {t.name || t.region}</div>
+          {data.tsunamis?.filter(tItem => tItem.severity === 'Warning').map((tItem, i) => (
+            <div key={`t${i}`} className="critical-alert tsunami-alert">🌊 {t('tsunami')}: {tItem.name || tItem.region}</div>
           ))}
         </div>
       )}
@@ -1503,12 +1484,10 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
 };
 
 // =====================================================================
-// POPUP CONTENT
+// POPUP CONTENT — FULLY i18n
 // =====================================================================
-
-const { t } = useTranslation();
-
 const PopupContent = ({ item, type, config, onOpenDrawer }) => {
+  const { t } = useTranslation();
   const severity = config.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
   const severityClass = `severity-${severity.toLowerCase().replace(/ /g, '-')}`;
   const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
@@ -1528,21 +1507,21 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
 
         {type === 'earthquakes' && (
           <>
-            <div className="detail-row"><strong>t('magnitude'):</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</span></div>
-            <div className="detail-row"><strong>Depth:</strong><span className="detail-value">{item.depth?.toFixed(1)} km — {item.depthClass || ''}</span></div>
-            {item.mmi > 0 && <div className="detail-row"><strong>Shaking:</strong><span className="detail-value">{item.intensityDesc || `MMI ${item.mmi.toFixed(1)}`}</span></div>}
-            {item.felt > 0 && <div className="detail-row"><strong>Felt:</strong><span className="detail-value">{item.felt} reports</span></div>}
-            {item.tsunami === 1 && <div className="alert-box tsunami">⚠️ TSUNAMI WARNING</div>}
+            <div className="detail-row"><strong>{t('magnitude')}:</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</span></div>
+            <div className="detail-row"><strong>{t('depth')}:</strong><span className="detail-value">{item.depth?.toFixed(1)} km — {item.depthClass || ''}</span></div>
+            {item.mmi > 0 && <div className="detail-row"><strong>{t('shaking')}:</strong><span className="detail-value">{item.intensityDesc || `MMI ${item.mmi.toFixed(1)}`}</span></div>}
+            {item.felt > 0 && <div className="detail-row"><strong>{t('feltReports')}:</strong><span className="detail-value">{item.felt} {t('reports')}</span></div>}
+            {item.tsunami === 1 && <div className="alert-box tsunami">⚠️ {t('tsunamiWarning')}</div>}
           </>
         )}
 
         {type === 'cyclones' && (
           <>
-            <div className="detail-row"><strong>Type:</strong><span className="detail-value">{item.stormType} · {item.category}</span></div>
-            {item.windSpeed > 0 && <div className="detail-row"><strong>Wind:</strong><span className="detail-value highlight">{item.windSpeed} km/h</span></div>}
-            {item.pressure > 0 && <div className="detail-row"><strong>Pressure:</strong><span className="detail-value">{item.pressure} hPa</span></div>}
-            {item.movementDesc && <div className="detail-row"><strong>Track:</strong><span className="detail-value">{item.movementDesc}</span></div>}
-            {item.population > 0 && <div className="detail-row"><strong>Pop. at Risk:</strong><span className="detail-value">{formatNumber(item.population)}</span></div>}
+            <div className="detail-row"><strong>{t('stormType')}:</strong><span className="detail-value">{item.stormType} · {item.category}</span></div>
+            {item.windSpeed > 0 && <div className="detail-row"><strong>{t('windSpeed')}:</strong><span className="detail-value highlight">{item.windSpeed} km/h</span></div>}
+            {item.pressure > 0 && <div className="detail-row"><strong>{t('pressure')}:</strong><span className="detail-value">{item.pressure} hPa</span></div>}
+            {item.movementDesc && <div className="detail-row"><strong>{t('track')}:</strong><span className="detail-value">{item.movementDesc}</span></div>}
+            {item.population > 0 && <div className="detail-row"><strong>{t('popAtRisk')}:</strong><span className="detail-value">{formatNumber(item.population)}</span></div>}
           </>
         )}
 
@@ -1555,46 +1534,46 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
               color: item.isActive ? '#ff6600' : '#4caf50'
             }}>
               <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.isActive ? '#ff4400' : '#4caf50', flexShrink: 0 }}></span>
-              <span>{item.isActive ? '🔥 ACTIVELY BURNING' : item.status === 'just_ended' ? '🟡 RECENTLY CONTAINED' : '✅ CONTAINED'}</span>
+              <span>{item.isActive ? `🔥 ${t('activelyBurning')}` : item.status === 'just_ended' ? `🟡 ${t('justContained')}` : `✅ ${t('contained')}`}</span>
             </div>
-            {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
-            {item.affectedArea > 0 && <div className="detail-row"><strong>Area:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
+            {item.country && <div className="detail-row"><strong>{t('country')}:</strong><span className="detail-value">{item.country}</span></div>}
+            {item.affectedArea > 0 && <div className="detail-row"><strong>{t('affectedArea')}:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
           </>
         )}
 
         {type === 'floods' && (
           <>
             {floodInfo?.isActive ? (
-              <div className="active-flood-badge"><span className="badge-icon">🔴</span><span className="badge-text">ACTIVE — Day {floodInfo.daysActive}</span></div>
+              <div className="active-flood-badge"><span className="badge-icon">🔴</span><span className="badge-text">{t('active')} — {t('day')} {floodInfo.daysActive}</span></div>
             ) : (
-              <div className="detail-row"><strong>Status:</strong><span className="detail-value">{floodInfo?.statusLabel || 'Ended'}</span></div>
+              <div className="detail-row"><strong>{t('status')}:</strong><span className="detail-value">{floodInfo?.statusLabel || t('ended')}</span></div>
             )}
-            <div className="detail-row"><strong>Alert:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
-            {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
-            {item.population > 0 && <div className="detail-row"><strong>Pop. at Risk:</strong><span className="detail-value">{formatNumber(item.population)}</span></div>}
-            {item.affectedArea > 0 && <div className="detail-row"><strong>Area:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
+            <div className="detail-row"><strong>{t('alert')}:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
+            {item.country && <div className="detail-row"><strong>{t('country')}:</strong><span className="detail-value">{item.country}</span></div>}
+            {item.population > 0 && <div className="detail-row"><strong>{t('popAtRisk')}:</strong><span className="detail-value">{formatNumber(item.population)}</span></div>}
+            {item.affectedArea > 0 && <div className="detail-row"><strong>{t('affectedArea')}:</strong><span className="detail-value">{formatNumber(item.affectedArea)} km²</span></div>}
           </>
         )}
 
         {type === 'volcanoes' && (
           <>
-            <div className="detail-row"><strong>Status:</strong><span className={`detail-value ${!item.isClosed ? 'highlight' : ''}`}>{!item.isClosed ? '🔴 Active' : '⚪ Inactive'}</span></div>
-            <div className="detail-row"><strong>Alert:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
-            {item.country && <div className="detail-row"><strong>Country:</strong><span className="detail-value">{item.country}</span></div>}
+            <div className="detail-row"><strong>{t('status')}:</strong><span className={`detail-value ${!item.isClosed ? 'highlight' : ''}`}>{!item.isClosed ? `🔴 ${t('active')}` : `⚪ ${t('inactive')}`}</span></div>
+            <div className="detail-row"><strong>{t('alert')}:</strong><span className={`detail-value alert-${item.alertLevel?.toLowerCase()}`}>{item.alertLevel}</span></div>
+            {item.country && <div className="detail-row"><strong>{t('country')}:</strong><span className="detail-value">{item.country}</span></div>}
           </>
         )}
 
         {type === 'weather' && (
           <>
-            <div className="detail-row"><strong>Severity:</strong><span className="detail-value">{item.severity} · {item.urgency}</span></div>
-            {item.timeRemaining && <div className="detail-row"><strong>Time Left:</strong><span className="detail-value highlight">{item.timeRemaining}</span></div>}
+            <div className="detail-row"><strong>{t('severity')}:</strong><span className="detail-value">{item.severity} · {item.urgency}</span></div>
+            {item.timeRemaining && <div className="detail-row"><strong>{t('timeLeft')}:</strong><span className="detail-value highlight">{item.timeRemaining}</span></div>}
           </>
         )}
 
         {type === 'landslides' && (
           <>
-            {item.fatalities > 0 && <div className="detail-row"><strong>Fatalities:</strong><span className="detail-value highlight">{item.fatalities}</span></div>}
-            {item.trigger && <div className="detail-row"><strong>Trigger:</strong><span className="detail-value">{item.trigger}</span></div>}
+            {item.fatalities > 0 && <div className="detail-row"><strong>{t('fatalities')}:</strong><span className="detail-value highlight">{item.fatalities}</span></div>}
+            {item.trigger && <div className="detail-row"><strong>{t('trigger')}:</strong><span className="detail-value">{item.trigger}</span></div>}
           </>
         )}
 
@@ -1613,13 +1592,13 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
         <span style={{ color: 'rgba(0,204,255,0.5)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{item.source || 'GDACS'}</span>
       </div>
 
-      <button className="popup-detail-btn" onClick={() => onOpenDrawer(item, type)}>View Full Details →</button>
+      <button className="popup-detail-btn" onClick={() => onOpenDrawer(item, type)}>{t('viewFullDetails')}</button>
     </div>
   );
 };
 
 // =====================================================================
-// LIVE FEED
+// LIVE FEED — FULLY i18n
 // =====================================================================
 const FEED_ICONS = {
   earthquakes: { icon: '🌍', color: '#ff4444', labelKey: 'earthquake' },
@@ -1638,6 +1617,7 @@ const FEED_ICONS = {
 const MAX_FEED_ITEMS = 80;
 
 const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytics, onShowPreferences }) => {
+  const { t, timeAgo } = useTranslation();
   const [feedItems, setFeedItems] = useState([]);
   const [isMinimized, setIsMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -1659,14 +1639,14 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytic
         if (prevIds.has(id)) return;
         const coords = getEventCoords(item);
         if (!coords) return;
-        const meta = FEED_ICONS[type] || { icon: '❓', color: '#888', label: type };
+        const meta = FEED_ICONS[type] || { icon: '❓', color: '#888', labelKey: type };
         const ts = getEventTimestamp(item, type);
         const severity = DISASTER_CONFIG[type]?.getSeverity?.(item) || '';
         
         newItems.push({
           feedId: `${type}_${id}_${Date.now()}`,
-          type, ...meta, severity,
-          title: item.name || item.place || item.event || meta.label,
+          type, icon: meta.icon, color: meta.color, labelKey: meta.labelKey, severity,
+          title: item.name || item.place || item.event || meta.labelKey,
           lat: coords.lat, lon: coords.lon,
           timestamp: ts, isNew: true, item
         });
@@ -1694,10 +1674,10 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytic
   if (isMinimized) {
     return (
       <div className="livefeed-minimized-pill" onClick={() => { setIsMinimized(false); setUnreadCount(0); }}
-        role="button" aria-label={`Open live feed. ${unreadCount} unread events.`}>
+        role="button" aria-label={`${t('liveFeed')}. ${unreadCount} ${t('newEvents')}.`}>
         <span className="pill-pulse"></span>
         <span className="pill-icon">📡</span>
-        <span className="pill-label">LIVE</span>
+        <span className="pill-label">{t('live')}</span>
         {unreadCount > 0 && <span className="pill-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       </div>
     );
@@ -1706,19 +1686,19 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytic
   return (
     <div className={`livefeed-container ${isHovered ? 'hovered' : ''}`}
       onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}
-      role="log" aria-label="Live event feed" aria-live="polite">
+      role="log" aria-label={t('liveFeed')} aria-live="polite">
       <div className="livefeed-header">
         <div className="livefeed-header-left">
           <span className={`livefeed-dot ${connected ? 'connected' : 'disconnected'}`}></span>
-          <span className="livefeed-title">LIVE FEED</span>
+          <span className="livefeed-title">{t('liveFeed').toUpperCase()}</span>
           <span className="livefeed-count">{feedItems.length}</span>
         </div>
         <div className="livefeed-header-right">
           {onShowAnalytics && (
-            <button className="livefeed-btn livefeed-tab-btn" onClick={onShowAnalytics} title="Analytics">📊</button>
+            <button className="livefeed-btn livefeed-tab-btn" onClick={onShowAnalytics} title={t('analytics')}>📊</button>
           )}
           {onShowPreferences && (
-            <button className="livefeed-btn livefeed-tab-btn" onClick={onShowPreferences} title="Settings">⚙️</button>
+            <button className="livefeed-btn livefeed-tab-btn" onClick={onShowPreferences} title={t('settings')}>⚙️</button>
           )}
           {!isAutoScroll && (
             <button className="livefeed-btn livefeed-btn-top" onClick={() => { if (listRef.current) listRef.current.scrollTop = 0; setIsAutoScroll(true); }}>↑ New</button>
@@ -1731,28 +1711,28 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytic
         {feedItems.length === 0 ? (
           <div className="livefeed-empty">
             <span className="livefeed-empty-icon">📡</span>
-            <span>Waiting for events...</span>
+            <span>{t('noEvents')}</span>
           </div>
         ) : (
-          feedItems.map(item => (
-            <div key={item.feedId}
-              className={`livefeed-item ${item.isNew ? 'livefeed-item-new' : ''} ${activeEventId === item.feedId ? 'livefeed-item-active' : ''}`}
-              style={{ '--accent': item.color }}
-              onClick={() => onEventClick && onEventClick(item)}
+          feedItems.map(feedItem => (
+            <div key={feedItem.feedId}
+              className={`livefeed-item ${feedItem.isNew ? 'livefeed-item-new' : ''} ${activeEventId === feedItem.feedId ? 'livefeed-item-active' : ''}`}
+              style={{ '--accent': feedItem.color }}
+              onClick={() => onEventClick && onEventClick(feedItem)}
               role="button" tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' && onEventClick) onEventClick(item); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && onEventClick) onEventClick(feedItem); }}
             >
-              <span className="livefeed-item-accent" style={{ background: item.color }}></span>
-              <div className="livefeed-item-icon" style={{ background: `${item.color}18` }}>{item.icon}</div>
+              <span className="livefeed-item-accent" style={{ background: feedItem.color }}></span>
+              <div className="livefeed-item-icon" style={{ background: `${feedItem.color}18` }}>{feedItem.icon}</div>
               <div className="livefeed-item-body">
                 <div className="livefeed-item-top">
-                  <span className="livefeed-item-label" style={{ color: item.color }}>{item.label}</span>
-                  {item.severity && /EXTREME|CRITICAL|ERUPTING|CAT.*[4-5]|WARNING/i.test(item.severity) && (
-                    <span className="livefeed-severity livefeed-severity-extreme">{item.severity}</span>
+                  <span className="livefeed-item-label" style={{ color: feedItem.color }}>{t(feedItem.labelKey)}</span>
+                  {feedItem.severity && /EXTREME|CRITICAL|ERUPTING|CAT.*[4-5]|WARNING/i.test(feedItem.severity) && (
+                    <span className="livefeed-severity livefeed-severity-extreme">{feedItem.severity}</span>
                   )}
                 </div>
-                <div className="livefeed-item-title">{item.title}</div>
-                <div className="livefeed-item-time">{formatTime(item.timestamp)}</div>
+                <div className="livefeed-item-title">{feedItem.title}</div>
+                <div className="livefeed-item-time">{timeAgo(feedItem.timestamp) || formatTime(feedItem.timestamp)}</div>
               </div>
             </div>
           ))
@@ -1766,7 +1746,7 @@ const LiveFeed = ({ data, connected, onEventClick, activeEventId, onShowAnalytic
 };
 
 // =====================================================================
-// LEGACY CRITICAL ALERT HOOK (kept as fallback; v5 uses useSmartAlerts)
+// LEGACY CRITICAL ALERT HOOK
 // =====================================================================
 const useCriticalAlerts = (data, alertsEnabled) => {
   const seenCritical = useRef(new Set());
@@ -1783,7 +1763,8 @@ const useCriticalAlerts = (data, alertsEnabled) => {
         if (seenCritical.current.has(id)) return;
         seenCritical.current.add(id);
         playAlertSound();
-        const title = `⚠️ ${t(config.nameKey)} Alert`;
+        // Use nameKey directly — notification titles are always English system-level
+        const title = `⚠️ ${config.nameKey.charAt(0).toUpperCase() + config.nameKey.slice(1)} Alert`;
         const body = `${item.name || item.place || 'Critical event detected'} — ${config.getSeverity?.(item) || 'ALERT'}`;
         sendBrowserNotification(title, body, config.icon);
       });
@@ -1807,7 +1788,7 @@ const useIsMobile = (breakpoint = 640) => {
 };
 
 // =====================================================================
-// MOBILE MENU
+// MOBILE MENU — FULLY i18n
 // =====================================================================
 const MobileMenu = ({
   data, enabledLayers, setEnabledLayers, connected,
@@ -1818,6 +1799,7 @@ const MobileMenu = ({
   onSearchSelect, onWatchArea,
   onShowAnalytics, onShowPreferences
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1871,12 +1853,12 @@ const MobileMenu = ({
       }
       case 'floods': {
         const active = items.filter(f => formatFloodInfo(f).isActive).length;
-        if (active > 0) details = `${active} active`;
+        if (active > 0) details = `${active} ${t('active').toLowerCase()}`;
         severity = active > 3 ? 'HIGH' : active > 0 ? 'MODERATE' : 'LOW';
         break;
       }
       default: {
-        details = items.length > 5 ? `${items.length} events` : '';
+        details = items.length > 5 ? `${items.length} ${t('event').toLowerCase()}s` : '';
         severity = items.length > 10 ? 'HIGH' : 'MODERATE';
       }
     }
@@ -1899,7 +1881,7 @@ const MobileMenu = ({
       <div className="m-topbar">
         <div className="m-search-row">
           <span className="m-search-icon">🔍</span>
-          <input type="text" className="m-search-input" placeholder="Search location..."
+          <input type="text" className="m-search-input" placeholder={t('searchLocation')}
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); doSearch(e.target.value); }}
             onFocus={() => { if (searchResults.length > 0) setSearchOpen(true); }}
@@ -1945,10 +1927,10 @@ const MobileMenu = ({
           <div className="m-menu-drawer">
             <div className="m-menu-header">
               <div>
-                <div className="m-menu-title">📊 DISASTER MONITOR</div>
+                <div className="m-menu-title">📊 {t('disasterMonitor')}</div>
                 <div className="m-menu-subtitle">
                   <span className={`m-status-dot ${connected ? 'on' : ''}`}></span>
-                  {connected ? 'Streaming live' : 'Reconnecting...'}
+                  {connected ? t('streamingLive') : t('reconnecting')}
                 </div>
               </div>
               <button className="m-menu-close" onClick={() => setIsOpen(false)}>✕</button>
@@ -1956,7 +1938,7 @@ const MobileMenu = ({
 
             <div className="m-menu-body">
               <div className="m-section">
-                <div className="m-section-label">LAYERS</div>
+                <div className="m-section-label">{t('layers')}</div>
                 <div className="m-stats-grid">
                   {allTypes.map(key => {
                     const config = DISASTER_CONFIG[key];
@@ -1983,21 +1965,21 @@ const MobileMenu = ({
               </div>
 
               <div className="m-section">
-                <div className="m-section-label">CONTROLS</div>
+                <div className="m-section-label">{t('controls')}</div>
                 <div className="m-controls-row">
-                  <button className={`m-ctrl-btn ${heatmapEnabled ? 'active' : ''}`} onClick={() => setHeatmapEnabled(!heatmapEnabled)}>🔥 Heatmap</button>
+                  <button className={`m-ctrl-btn ${heatmapEnabled ? 'active' : ''}`} onClick={() => setHeatmapEnabled(!heatmapEnabled)}>🔥 {t('heatmap')}</button>
                   <button className={`m-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
                     onClick={() => {
                       const newVal = !alertsEnabled;
                       setAlertsEnabled(newVal);
                       localStorage.setItem('realnow_alerts', String(newVal));
                       if (newVal && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-                    }}>🔔 Alerts</button>
-                  {watchArea && <button className="m-ctrl-btn" onClick={() => setWatchArea(null)}>❌ Clear Watch</button>}
+                    }}>🔔 {t('alerts')}</button>
+                  {watchArea && <button className="m-ctrl-btn" onClick={() => setWatchArea(null)}>❌ {t('clearWatch')}</button>}
                 </div>
                 <div className="m-controls-row" style={{marginTop: '6px'}}>
-                  <button className="m-ctrl-btn" onClick={() => { setIsOpen(false); onShowAnalytics && onShowAnalytics(); }}>📊 Analytics</button>
-                  <button className="m-ctrl-btn" onClick={() => { setIsOpen(false); onShowPreferences && onShowPreferences(); }}>⚙️ Settings</button>
+                  <button className="m-ctrl-btn" onClick={() => { setIsOpen(false); onShowAnalytics && onShowAnalytics(); }}>📊 {t('analytics')}</button>
+                  <button className="m-ctrl-btn" onClick={() => { setIsOpen(false); onShowPreferences && onShowPreferences(); }}>⚙️ {t('settings')}</button>
                 </div>
               </div>
 
@@ -2015,7 +1997,7 @@ const MobileMenu = ({
               {criticalCount > 0 && (
                 <div className="m-section">
                   <button className="m-alerts-btn" onClick={() => setShowAlerts(!showAlerts)}>
-                    <span>⚠️ {criticalCount} Critical Alert{criticalCount > 1 ? 's' : ''}</span>
+                    <span>⚠️ {criticalCount} {t(criticalCount > 1 ? 'criticalAlerts' : 'criticalAlert')}</span>
                     <span>{showAlerts ? '▼' : '▶'}</span>
                   </button>
                   {showAlerts && (
@@ -2029,8 +2011,8 @@ const MobileMenu = ({
                       {data.earthquakes?.filter(e => e.magnitude >= 6).slice(0, 3).map((eq, i) => (
                         <div key={`e${i}`} className="m-alert-item earthquake">🌍 M{eq.magnitude?.toFixed(1)} - {eq.place}</div>
                       ))}
-                      {data.tsunamis?.filter(t => t.severity === 'Warning').map((t, i) => (
-                        <div key={`t${i}`} className="m-alert-item tsunami">🌊 {t.name || t.region}</div>
+                      {data.tsunamis?.filter(tItem => tItem.severity === 'Warning').map((tItem, i) => (
+                        <div key={`t${i}`} className="m-alert-item tsunami">🌊 {tItem.name || tItem.region}</div>
                       ))}
                     </div>
                   )}
@@ -2039,7 +2021,7 @@ const MobileMenu = ({
             </div>
 
             <div className="m-menu-footer">
-              <span>REALNOW v5.0 — ALL FREE SOURCES</span>
+              <span>REALNOW v5.2 — ALL FREE SOURCES</span>
             </div>
           </div>
         </>
@@ -2049,23 +2031,22 @@ const MobileMenu = ({
 };
 
 // =====================================================================
-// MAIN APP COMPONENT v5.0
+// MAIN APP COMPONENT v5.2
 // =====================================================================
 function App() {
   const { rawData, connected, loading } = useRealtimeData();
   const isMobile = useIsMobile();
+  const { t } = useTranslation();
   const [timeFilter, setTimeFilter] = useState(0);
   const [enabledLayers, setEnabledLayers] = useState(
     Object.keys(DISASTER_CONFIG).reduce((acc, key) => ({ ...acc, [key]: DISASTER_CONFIG[key].enabled }), {})
   );
   
-  // Existing state
   const [flyTarget, setFlyTarget] = useState(null);
   const [activeEventId, setActiveEventId] = useState(null);
   const [highlightPos, setHighlightPos] = useState(null);
   const highlightTimer = useRef(null);
   
-  // v4 state (preserved)
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
   const [drawerItem, setDrawerItem] = useState(null);
   const [drawerType, setDrawerType] = useState(null);
@@ -2077,9 +2058,7 @@ function App() {
   });
   const [shareToast, setShareToast] = useState('');
   
-  // ═══════════════════════════════════════════════════════════
-  // v5: NEW STATE
-  // ═══════════════════════════════════════════════════════════
+  // v5 state
   const [mapStyle, setMapStyle] = useState(() => {
     try { return localStorage.getItem('realnow_mapstyle') || 'dark'; } catch { return 'dark'; }
   });
@@ -2098,9 +2077,7 @@ function App() {
     try { return localStorage.getItem('realnow_digest_freq') || 'off'; } catch { return 'off'; }
   });
 
-  // ═══════════════════════════════════════════════════════════
-  // v5: Persist new settings
-  // ═══════════════════════════════════════════════════════════
+  // Persist settings
   useEffect(() => { try { localStorage.setItem('realnow_mapstyle', mapStyle); } catch {} }, [mapStyle]);
   useEffect(() => { try { localStorage.setItem('realnow_language', language); } catch {} }, [language]);
   useEffect(() => { try { localStorage.setItem('realnow_sound', String(soundEnabled)); } catch {} }, [soundEnabled]);
@@ -2109,15 +2086,11 @@ function App() {
 
   const data = filterDataByTime(rawData, timeFilter);
   
-  // v5: Smart proximity alerts (replaces basic useCriticalAlerts when watch area is set)
-  // Falls back to legacy alerts when no watch area
   useSmartAlerts(data, alertsEnabled, watchArea, { soundEnabled });
   useCriticalAlerts(data, alertsEnabled && !watchArea);
   
-  // PWA service worker
   useEffect(() => { registerServiceWorker(); }, []);
   
-  // Handle deep link on mount
   useEffect(() => {
     const params = getShareParams();
     if (params.lat && params.lon) {
@@ -2127,20 +2100,17 @@ function App() {
     }
   }, []);
   
-  // Notification permission
   useEffect(() => {
     if (alertsEnabled && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, [alertsEnabled]);
   
-  // Persist watch area
   useEffect(() => {
     if (watchArea) localStorage.setItem('realnow_watcharea', JSON.stringify(watchArea));
     else localStorage.removeItem('realnow_watcharea');
   }, [watchArea]);
 
-  // v5: Sync preferences to backend (fire-and-forget)
   useEffect(() => {
     const prefs = {
       enabledLayers, mapStyle, language, soundEnabled,
@@ -2151,10 +2121,9 @@ function App() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(prefs)
-    }).catch(() => {}); // silent fail — preferences are optional
+    }).catch(() => {});
   }, [enabledLayers, mapStyle, language, soundEnabled, alertsEnabled, digestEmail, digestFrequency, watchArea]);
 
-  // Feed click handler
   const handleFeedClick = useCallback((feedItem) => {
     setFlyTarget({ lat: feedItem.lat, lon: feedItem.lon, zoom: 7, _ts: Date.now() });
     setActiveEventId(feedItem.feedId);
@@ -2186,9 +2155,7 @@ function App() {
     setTimeout(() => setShareToast(''), 2500);
   }, []);
 
-  // Render markers (for non-fire, non-clustered types)
   const renderDisasterMarkers = (items, type) => {
-    // v5: fires use ClusterLayer instead
     if (type === 'fires') return null;
     if (!enabledLayers[type] || !items?.length) return null;
     const config = DISASTER_CONFIG[type];
@@ -2236,18 +2203,19 @@ function App() {
 
   if (loading) {
     return (
-      <div className="loading-screen">
-        <div className="loading-spinner">🌍</div>
-        <div>Loading Real-Time Disaster Data...</div>
-        <div style={{fontSize: '0.8em', color: '#666', marginTop: '8px'}}>v5.0 — All Free Sources</div>
-      </div>
+      <I18nProvider language={language}>
+        <div className="loading-screen">
+          <div className="loading-spinner">🌍</div>
+          <div>{t('loading')}</div>
+          <div style={{fontSize: '0.8em', color: '#666', marginTop: '8px'}}>v5.2 — All Free Sources</div>
+        </div>
+      </I18nProvider>
     );
   }
 
   return (
     <I18nProvider language={language}>
       <div className="app-container" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-        {/* v5: Skip navigation link for accessibility */}
         <a href="#main-map" className="sr-only" style={{
           position: 'absolute', top: '-40px', left: 0, background: '#000', color: '#fff',
           padding: '8px 16px', zIndex: 10000, fontSize: '14px',
@@ -2258,39 +2226,18 @@ function App() {
         </a>
 
         <MapContainer id="main-map" center={[20, 0]} zoom={2} className="map-container" zoomControl={false} worldCopyJump={true}>
-          {/* v5: MapStyleSwitcher replaces hardcoded TileLayer */}
           <MapStyleSwitcher mapStyle={mapStyle} onStyleChange={setMapStyle} />
-          
           <MapController flyTarget={flyTarget} />
-          
-          {/* v4: Heatmap layer */}
           {heatmapEnabled && <HeatmapLayer data={data} enabledLayers={enabledLayers} />}
-          
-          {/* v4: Watch area circle */}
           {watchArea && <WatchAreaCircle watchArea={watchArea} />}
-          
-          {/* v5: Disaster polygon overlays (flood zones, wildfire areas, drought zones) */}
           <DisasterPolygons data={data} enabledLayers={enabledLayers} />
-          
-          {/* v5: Cyclone wind radius circles */}
           {enabledLayers.cyclones && data.cyclones?.map((cyclone, i) => (
             <CycloneTrackLine key={`ct-${i}`} cyclone={cyclone} />
           ))}
-          
-          {/* v5: Clustered fires layer */}
           {enabledLayers.fires && data.fires?.length > 0 && (
-            <ClusterLayer
-              data={data.fires}
-              type="fires"
-              config={DISASTER_CONFIG.fires}
-              onOpenDrawer={handleOpenDrawer}
-            />
+            <ClusterLayer data={data.fires} type="fires" config={DISASTER_CONFIG.fires} onOpenDrawer={handleOpenDrawer} />
           )}
-          
-          {/* All other disaster markers */}
           {Object.keys(data).map(type => renderDisasterMarkers(data[type], type))}
-
-          {/* Highlight rings */}
           {highlightPos && (
             <>
               <CircleMarker center={[highlightPos.lat, highlightPos.lon]} radius={22} fillColor="transparent" color={highlightPos.color || '#ffffff'} weight={3} opacity={0.9} fillOpacity={0} className="highlight-ring" />
@@ -2298,8 +2245,6 @@ function App() {
             </>
           )}
         </MapContainer>
-        
-        {/* v5: Analytics/Settings now integrated into LiveFeed header tabs */}
 
         {isMobile ? (
           <>
@@ -2324,19 +2269,18 @@ function App() {
             <TimeControl timeFilter={timeFilter} setTimeFilter={setTimeFilter} connected={connected} />
             <TimelineScrubber data={data} onTimeChange={handleTimelineChange} />
             
-            {/* v4 controls bar */}
             <div className="v4-controls">
               <button className={`v4-ctrl-btn ${heatmapEnabled ? 'active' : ''}`}
-                onClick={() => setHeatmapEnabled(!heatmapEnabled)} title="Toggle heatmap">🔥 Heatmap</button>
+                onClick={() => setHeatmapEnabled(!heatmapEnabled)} title={t('heatmap')}>🔥 {t('heatmap')}</button>
               <button className={`v4-ctrl-btn ${alertsEnabled ? 'active' : ''}`}
                 onClick={() => {
                   const newVal = !alertsEnabled;
                   setAlertsEnabled(newVal);
                   localStorage.setItem('realnow_alerts', String(newVal));
                   if (newVal && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-                }} title="Toggle alerts">🔔 Alerts</button>
+                }} title={t('alerts')}>🔔 {t('alerts')}</button>
               {watchArea && (
-                <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title="Clear watch area">❌ Clear Watch</button>
+                <button className="v4-ctrl-btn" onClick={() => setWatchArea(null)} title={t('clearWatch')}>❌ {t('clearWatch')}</button>
               )}
             </div>
             
@@ -2345,24 +2289,12 @@ function App() {
           </>
         )}
         
-        {/* v4: Detail Drawer */}
         <DetailDrawer item={drawerItem} type={drawerType} onClose={() => { setDrawerItem(null); setDrawerType(null); }} onShare={handleShare} />
         
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/* v5: ANALYTICS DASHBOARD */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         {showAnalytics && (
-          <AnalyticsDashboard
-            data={data}
-            isOpen={true}
-            connected={connected}
-            onClose={() => setShowAnalytics(false)}
-          />
+          <AnalyticsDashboard data={data} isOpen={true} connected={connected} onClose={() => setShowAnalytics(false)} />
         )}
         
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/* v5: PREFERENCES PANEL */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         {showPreferences && (
           <PreferencesPanel
             isOpen={true}
@@ -2377,7 +2309,6 @@ function App() {
           />
         )}
         
-        {/* v4: Share toast */}
         {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
       </div>
     </I18nProvider>
