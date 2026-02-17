@@ -28,6 +28,7 @@ import './LiveFeed.css';
 import './v4-enhancements.css';
 import './v5-enhancements.css';
 import './mobile-fix.css';
+import { I18nProvider, useTranslation } from './i18n/i18n';
 
 // v5: New component imports
 import { MapStyleSwitcher, DisasterPolygons, CycloneTrackLine } from './components/MapEnhancements';
@@ -40,9 +41,12 @@ import { I18nProvider } from './i18n/i18n';
 // =====================================================================
 // DISASTER CONFIGURATION
 // =====================================================================
+
+
+
 const DISASTER_CONFIG = {
   earthquakes: { 
-    color: '#ff4444', icon: '🌍', name: 'Earthquakes', enabled: true,
+    color: '#ff4444', icon: '🌍', nameKey: 'earthquakes', enabled: true,
     getRadius: (item) => {
       const mag = item.magnitude || 0;
       if (mag >= 7) return 25; if (mag >= 6) return 20;
@@ -64,7 +68,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => (item.magnitude || 0) >= 6
   },
   volcanoes: { 
-    color: '#ff3333', icon: '🌋', name: 'Volcanoes', enabled: true,
+    color: '#ff3333', icon: '🌋', nameKey: 'volcanoes', enabled: true,
     getRadius: (item) => item.alertLevel === 'Red' ? 20 : item.alertLevel === 'Orange' ? 15 : 10,
     getSeverity: (item) => {
       const level = item.alertLevel?.toUpperCase();
@@ -75,7 +79,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => item.alertLevel === 'Red'
   },
   cyclones: { 
-    color: '#00ccff', icon: '🌀', name: 'Cyclones', enabled: true,
+    color: '#00ccff', icon: '🌀', nameKey: 'cyclones', enabled: true,
     getRadius: (item) => {
       const wind = item.windSpeed || 0;
       if (wind > 250) return 30; if (wind > 180) return 25;
@@ -94,7 +98,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => (item.windSpeed || 0) > 119
   },
   floods: { 
-    color: '#4488ff', icon: '🌊', name: 'Floods', enabled: true,
+    color: '#4488ff', icon: '🌊', nameKey: 'floods', enabled: true,
     getRadius: (item) => {
       if (item.alertLevel === 'Red') return 18;
       if (item.alertLevel === 'Orange') return 14;
@@ -115,7 +119,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => item.alertLevel === 'Red'
   },
   wildfires: { 
-    color: '#ff6600', icon: '🔥', name: 'Wildfires', enabled: true,
+    color: '#ff6600', icon: '🔥', nameKey: 'wildfires', enabled: true,
     getRadius: (item) => {
       if (item.affectedArea > 1000) return 20; if (item.affectedArea > 500) return 15;
       if (item.alertLevel === 'Red') return 18; if (item.alertLevel === 'Orange') return 14;
@@ -136,7 +140,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => item.alertLevel === 'Red' || item.affectedArea > 1000
   },
   fires: { 
-    color: '#ff8800', icon: '🔥', name: 'Hotspots', enabled: false,
+    color: '#ff8800', icon: '🔥', nameKey: 'fires', enabled: false,
     getRadius: (item) => {
       const frp = item.frp || 0;
       if (frp > 100) return 8; if (frp > 50) return 6; return 4;
@@ -150,14 +154,14 @@ const DISASTER_CONFIG = {
     isCritical: () => false
   },
   weather: { 
-    color: '#ffaa00', icon: '⚠️', name: 'Weather', enabled: false,
+    color: '#ffaa00', icon: '⚠️', nameKey: 'weather', enabled: false,
     getRadius: () => 8,
     getSeverity: (item) => item.severity?.toUpperCase() || 'ALERT',
     getOpacity: (item) => item.severity === 'Extreme' ? 0.85 : 0.5,
     isCritical: (item) => item.severity === 'Extreme'
   },
   droughts: { 
-    color: '#cc9900', icon: '🏜️', name: 'Droughts', enabled: true,
+    color: '#cc9900', icon: '🏜️', nameKey: 'droughts', enabled: true,
     getRadius: (item) => item.alertLevel === 'Red' ? 20 : item.alertLevel === 'Orange' ? 16 : 12,
     getSeverity: (item) => {
       if (item.alertLevel === 'Red') return 'CRITICAL';
@@ -167,7 +171,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => item.alertLevel === 'Red'
   },
   landslides: {
-    color: '#8B4513', icon: '⛰️', name: 'Landslides', enabled: true,
+    color: '#8B4513', icon: '⛰️', nameKey: 'landslides', enabled: true,
     getRadius: (item) => {
       if (item.fatalities > 10) return 18; if (item.fatalities > 0) return 14; return 10;
     },
@@ -180,7 +184,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => (item.fatalities || 0) > 10
   },
   tsunamis: {
-    color: '#0066cc', icon: '🌊', name: 'Tsunamis', enabled: true,
+    color: '#0066cc', icon: '🌊', nameKey: 'tsunamis', enabled: true,
     getRadius: (item) => {
       if (item.severity === 'Warning') return 25;
       if (item.severity === 'Watch') return 18; return 12;
@@ -190,7 +194,7 @@ const DISASTER_CONFIG = {
     isCritical: (item) => item.severity === 'Warning'
   },
   spaceweather: { 
-    color: '#ff00ff', icon: '☀️', name: 'Space', enabled: false,
+    color: '#ff00ff', icon: '☀️', nameKey: 'spaceweather', enabled: false,
     getRadius: (item) => (item.currentKp || 0) * 5,
     getSeverity: (item) => {
       const kp = item.currentKp || 0;
@@ -1357,6 +1361,9 @@ const TimelineScrubber = ({ data, onTimeChange }) => {
 // =====================================================================
 // STATS DASHBOARD
 // =====================================================================
+
+const { t } = useTranslation();
+
 const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -1452,13 +1459,13 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
             <div key={key}
               className={`stat-card enhanced ${isEnabled ? 'active' : ''} ${severityClass}`}
               onClick={() => setEnabledLayers(prev => ({ ...prev, [key]: !prev[key] }))}
-              role="switch" aria-checked={isEnabled} aria-label={`${config.name}: ${stats.count} events`}
+              role="switch" aria-checked={isEnabled} aria-label={`${t(config.nameKey)}: ${stats.count} events`}
             >
               <div className="stat-header">
                 <span className="stat-icon" aria-hidden="true">{config.icon}</span>
                 <span className={`stat-count ${stats.severity === 'EXTREME' ? 'pulse' : ''}`}>{stats.count}</span>
               </div>
-              <div className="stat-name">{config.name}</div>
+              <div className="stat-name">{t(config.nameKey)}</div>
               {stats.details && <div className="stat-details">{stats.details}</div>}
               {stats.severity !== 'NONE' && stats.severity !== 'LOW' && (
                 <div className={`severity-badge ${severityClass}`}>{stats.severity}</div>
@@ -1470,7 +1477,7 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
       {criticalCount > 0 && (
         <div className="alerts-toggle">
           <button className="alerts-button" onClick={() => setShowAlerts(!showAlerts)}>
-            <span>⚠️ {criticalCount} Critical Alert{criticalCount > 1 ? 's' : ''}</span>
+            <span>⚠️ {criticalCount} {t(criticalCount > 1 ? 'criticalAlerts' : 'criticalAlert')}</span>
             <span className="toggle-arrow">{showAlerts ? '▼' : '▶'}</span>
           </button>
         </div>
@@ -1478,16 +1485,16 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
       {showAlerts && (
         <div className="alerts-section" role="alert">
           {data.volcanoes?.filter(v => v.alertLevel === 'Red').map((v, i) => (
-            <div key={`v${i}`} className="critical-alert volcano">🌋 ERUPTION: {v.name} - {v.country}</div>
+            <div key={`v${i}`} className="critical-alert volcano">🌋 ${t('erupting')}: {v.name} - {v.country}</div>
           ))}
           {data.cyclones?.filter(c => c.windSpeed > 119).map((c, i) => (
-            <div key={`c${i}`} className="critical-alert cyclone">🌀 {c.stormType || 'CYCLONE'}: {c.name} - {c.windSpeed ? `${c.windSpeed} km/h` : ''}</div>
+            <div key={`c${i}`} className="critical-alert cyclone">🌀 ${t('cyclone')}: {c.name} - {c.windSpeed ? `${c.windSpeed} km/h` : ''}</div>
           ))}
           {data.earthquakes?.filter(e => e.magnitude >= 6).slice(0, 3).map((eq, i) => (
             <div key={`e${i}`} className="critical-alert earthquake">🌍 M{eq.magnitude?.toFixed(1)} - {eq.place} - {formatTime(eq.time)}</div>
           ))}
           {data.tsunamis?.filter(t => t.severity === 'Warning').map((t, i) => (
-            <div key={`t${i}`} className="critical-alert tsunami-alert">🌊 TSUNAMI: {t.name || t.region}</div>
+            <div key={`t${i}`} className="critical-alert tsunami-alert">🌊 ${t('tsunami')}: {t.name || t.region}</div>
           ))}
         </div>
       )}
@@ -1498,6 +1505,9 @@ const StatsDashboard = ({ data, enabledLayers, setEnabledLayers, connected }) =>
 // =====================================================================
 // POPUP CONTENT
 // =====================================================================
+
+const { t } = useTranslation();
+
 const PopupContent = ({ item, type, config, onOpenDrawer }) => {
   const severity = config.getSeverity ? config.getSeverity(item) : 'UNKNOWN';
   const severityClass = `severity-${severity.toLowerCase().replace(/ /g, '-')}`;
@@ -1509,7 +1519,7 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
         <span className="popup-icon">{config.icon}</span>
         <div className="popup-title-section">
           <div className="popup-title">
-            {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || config.name)}
+            {type === 'floods' && floodInfo ? floodInfo.clearName : (item.name || item.place || item.event || t(config.nameKey))}
           </div>
           <div className={`popup-severity ${severityClass}`}>{severity}</div>
         </div>
@@ -1518,7 +1528,7 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
 
         {type === 'earthquakes' && (
           <>
-            <div className="detail-row"><strong>Magnitude:</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</span></div>
+            <div className="detail-row"><strong>t('magnitude'):</strong><span className="detail-value highlight">M{item.magnitude?.toFixed(1)} {item.magType ? `(${item.magType})` : ''}</span></div>
             <div className="detail-row"><strong>Depth:</strong><span className="detail-value">{item.depth?.toFixed(1)} km — {item.depthClass || ''}</span></div>
             {item.mmi > 0 && <div className="detail-row"><strong>Shaking:</strong><span className="detail-value">{item.intensityDesc || `MMI ${item.mmi.toFixed(1)}`}</span></div>}
             {item.felt > 0 && <div className="detail-row"><strong>Felt:</strong><span className="detail-value">{item.felt} reports</span></div>}
@@ -1612,17 +1622,17 @@ const PopupContent = ({ item, type, config, onOpenDrawer }) => {
 // LIVE FEED
 // =====================================================================
 const FEED_ICONS = {
-  earthquakes: { icon: '🌍', color: '#ff4444', label: 'Earthquake' },
-  wildfires:   { icon: '🔥', color: '#ff6600', label: 'Wildfire' },
-  fires:       { icon: '🔥', color: '#ff8800', label: 'Hotspot' },
-  floods:      { icon: '🌊', color: '#4488ff', label: 'Flood' },
-  cyclones:    { icon: '🌀', color: '#00ccff', label: 'Cyclone' },
-  volcanoes:   { icon: '🌋', color: '#ff3333', label: 'Volcano' },
-  droughts:    { icon: '🏜️', color: '#cc9900', label: 'Drought' },
-  spaceweather:{ icon: '☀️', color: '#ff00ff', label: 'Space' },
-  weather:     { icon: '⚠️', color: '#ffaa00', label: 'Weather' },
-  landslides:  { icon: '⛰️', color: '#8B4513', label: 'Landslide' },
-  tsunamis:    { icon: '🌊', color: '#0066cc', label: 'Tsunami' },
+  earthquakes: { icon: '🌍', color: '#ff4444', labelKey: 'earthquake' },
+  wildfires:   { icon: '🔥', color: '#ff6600', labelKey: 'wildfire' },
+  fires:       { icon: '🔥', color: '#ff8800', labelKey: 'hotspot' },
+  floods:      { icon: '🌊', color: '#4488ff', labelKey: 'flood' },
+  cyclones:    { icon: '🌀', color: '#00ccff', labelKey: 'cyclone' },
+  volcanoes:   { icon: '🌋', color: '#ff3333', labelKey: 'volcano' },
+  droughts:    { icon: '🏜️', color: '#cc9900', labelKey: 'drought' },
+  spaceweather:{ icon: '☀️', color: '#ff00ff', labelKey: 'space' },
+  weather:     { icon: '⚠️', color: '#ffaa00', labelKey: 'weatherAlert' },
+  landslides:  { icon: '⛰️', color: '#8B4513', labelKey: 'landslide' },
+  tsunamis:    { icon: '🌊', color: '#0066cc', labelKey: 'tsunami' },
 };
 
 const MAX_FEED_ITEMS = 80;
@@ -1773,7 +1783,7 @@ const useCriticalAlerts = (data, alertsEnabled) => {
         if (seenCritical.current.has(id)) return;
         seenCritical.current.add(id);
         playAlertSound();
-        const title = `⚠️ ${config.name} Alert`;
+        const title = `⚠️ ${t(config.nameKey)} Alert`;
         const body = `${item.name || item.place || 'Critical event detected'} — ${config.getSeverity?.(item) || 'ALERT'}`;
         sendBrowserNotification(title, body, config.icon);
       });
@@ -1961,7 +1971,7 @@ const MobileMenu = ({
                           <span className="m-stat-icon">{config.icon}</span>
                           <span className="m-stat-count">{stats.count}</span>
                         </div>
-                        <div className="m-stat-name">{config.name}</div>
+                        <div className="m-stat-name">{t(config.nameKey)}</div>
                         {stats.details && <div className="m-stat-details">{stats.details}</div>}
                         {stats.severity !== 'NONE' && stats.severity !== 'LOW' && (
                           <div className={`m-sev-badge sev-${stats.severity.toLowerCase()}`}>{stats.severity}</div>
@@ -2193,7 +2203,7 @@ function App() {
       const opacity = config.getOpacity ? config.getOpacity(item) : 0.6;
       const severity = config.getSeverity ? config.getSeverity(item) : '';
       const floodInfo = type === 'floods' ? formatFloodInfo(item) : null;
-      const displayName = type === 'floods' ? floodInfo?.clearName : (item.name || item.place || item.event || config.name);
+      const displayName = type === 'floods' ? floodInfo?.clearName : (item.name || item.place || item.event || t(config.nameKey));
       
       markers.push(
         <CircleMarker
