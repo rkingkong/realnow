@@ -819,141 +819,201 @@ class DisasterDataAggregator {
     }
 
   transformGDACSCyclones(data) {
-      console.log('🌀 Processing GDACS cyclones/hurricanes/typhoons...');
+        console.log('🌀 Processing GDACS cyclones/hurricanes/typhoons...');
 
-      if (!data?.features) {
-        console.log('No cyclone features to process');
-        return null;
+        if (!data?.features) {
+          console.log('No cyclone features to process');
+          return null;
+        }
+
+        console.log(`Processing ${data.features.length} potential cyclone features`);
+
+        const now = new Date();
+        const currentYear = now.getFullYear();
+
+        const cyclones = data.features
+          .filter(f => f.properties && f.geometry?.coordinates)
+          .map(f => {
+            const props = f.properties;
+            const coords = f.geometry.coordinates;
+
+            let windSpeed = 0;
+            if (props.windspeed !== undefined && props.windspeed !== null) {
+              windSpeed = parseInt(props.windspeed) || parseFloat(props.windspeed) || 0;
+            }
+
+            const eventName = props.eventname || props.name || `Tropical System ${props.eventid}`;
+            let stormType = 'Tropical Depression';
+
+            const nameLower = eventName.toLowerCase();
+            if (nameLower.includes('hurricane')) stormType = 'Hurricane';
+            else if (nameLower.includes('typhoon')) stormType = 'Typhoon';
+            else if (nameLower.includes('cyclone')) stormType = 'Cyclone';
+            else if (nameLower.includes('storm')) stormType = 'Tropical Storm';
+            else if (windSpeed > 0) {
+              if (windSpeed >= 119) stormType = 'Hurricane/Typhoon';
+              else if (windSpeed >= 63) stormType = 'Tropical Storm';
+            }
+
+            // ── Saffir-Simpson classification ──
+            let saffirSimpson = '';
+            if (windSpeed >= 252) saffirSimpson = 'Category 5 — Catastrophic';
+            else if (windSpeed >= 209) saffirSimpson = 'Category 4 — Devastating';
+            else if (windSpeed >= 178) saffirSimpson = 'Category 3 — Major';
+            else if (windSpeed >= 154) saffirSimpson = 'Category 2 — Extensive';
+            else if (windSpeed >= 119) saffirSimpson = 'Category 1 — Dangerous';
+            else if (windSpeed >= 63) saffirSimpson = 'Tropical Storm';
+            else saffirSimpson = 'Tropical Depression';
+
+            // ── Beaufort Scale ──
+            let beaufort = 0;
+            const wsKnots = windSpeed * 0.539957;
+            if (wsKnots >= 64) beaufort = 12;
+            else if (wsKnots >= 56) beaufort = 11;
+            else if (wsKnots >= 48) beaufort = 10;
+            else if (wsKnots >= 41) beaufort = 9;
+            else if (wsKnots >= 34) beaufort = 8;
+            else if (wsKnots >= 28) beaufort = 7;
+            else if (wsKnots >= 22) beaufort = 6;
+
+            // ── Movement description ──
+            const speed = parseFloat(props.speed || 0);
+            const direction = parseFloat(props.direction || 0);
+            let movementDesc = '';
+            if (speed > 0) {
+              const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+              const dirIndex = Math.round(((direction % 360) / 22.5)) % 16;
+              movementDesc = `Moving ${dirs[dirIndex]} at ${speed.toFixed(0)} km/h`;
+            }
+
+            // ── Pressure classification ──
+            const pressure = parseInt(props.pressure || 0);
+            let pressureDesc = '';
+            if (pressure > 0) {
+              if (pressure < 920) pressureDesc = 'Extremely Low — Violent';
+              else if (pressure < 945) pressureDesc = 'Very Low — Intense';
+              else if (pressure < 965) pressureDesc = 'Low — Strong';
+              else if (pressure < 990) pressureDesc = 'Below Normal — Moderate';
+              else pressureDesc = 'Near Normal';
+            }
+
+            // ── Duration in days ──
+            let durationDays = null;
+            if (props.fromdate) {
+              const from = new Date(props.fromdate);
+              const to = props.todate ? new Date(props.todate) : new Date();
+              durationDays = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)));
+            }
+
+            // ── USE computeEventStatus just like floods/wildfires/droughts ──
+            const eventStatus = this.computeEventStatus(props);
+
+            return {
+              id: `gdacs_tc_${props.eventid || Math.random()}`,
+              type: 'cyclone',
+              name: eventName,
+              coordinates: coords,
+              latitude: coords[1],
+              longitude: coords[0],
+              alertLevel: props.alertlevel || 'Yellow',
+              alertScore: parseFloat(props.alertscore || 0),
+              category: props.tc_category || this.getCycloneCategory(windSpeed),
+              windSpeed: windSpeed,
+              pressure: pressure || null,
+              direction: direction,
+              speed: speed,
+              country: props.country || this.extractCountryName(props.affectedcountries?.[0]) || 'Ocean',
+              affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
+              population: parseInt(props.population || 0),
+              fromDate: props.fromdate,
+              toDate: props.todate,
+              source: 'GDACS',
+              stormType: stormType,
+              // ── USE computeEventStatus instead of simple inline check ──
+              isActive: eventStatus.isActive,
+              status: eventStatus.status,
+              freshness: eventStatus.freshness,
+              daysSinceStart: eventStatus.daysSinceStart,
+              daysSinceEnd: eventStatus.daysSinceEnd,
+              severity: props.severitydata?.severity || props.severity || windSpeed,
+              description: props.description || `${stormType} with winds ${windSpeed} km/h`,
+              // ── NEW v5.1 FIELDS ──
+              url: props.url?.report || props.url?.details || props.link || '',
+              episodeId: props.episodeid || null,
+              htmlDescription: props.htmldescription || '',
+              iso3: props.iso3 || props.countryiso || '',
+              lastUpdate: props.lastupdate || props.modified || new Date().toISOString(),
+              durationDays: durationDays,
+              saffirSimpson: saffirSimpson,
+              beaufort: beaufort,
+              movementDesc: movementDesc,
+              pressureDesc: pressureDesc,
+              affectedArea: parseInt(props.affectedarea || 0),
+              glide: props.glide || '',
+              eventId: props.eventid || '',
+              maxWindRadius: parseInt(props.maxwindradius || 0),
+              iconUrl: props.icon || '',
+              isCurrent: props.iscurrent === 'true' || props.iscurrent === true
+            };
+          })
+          // ─────────────────────────────────────────────────────────────
+          // STALENESS FILTER — This was MISSING before!
+          // Tropical systems are short-lived, so use a 3-day grace period
+          // after the toDate (vs 7 days for floods, 30 days for droughts)
+          // ─────────────────────────────────────────────────────────────
+          .filter(cyclone => {
+            // CHECK 1: Filter out events with old years in name
+            // e.g. "MONTHA-25" might reference 2025 season but be long over
+            const nameYearMatch = cyclone.name.match(/-(\d{2})$/);
+            if (nameYearMatch) {
+              // Two-digit year suffix like "-25" for 2025
+              const eventYear = 2000 + parseInt(nameYearMatch[1]);
+              if (eventYear < currentYear - 1) {
+                console.log(`  ⏭️ Filtering out old cyclone: "${cyclone.name}" (year ${eventYear} in name, current year ${currentYear})`);
+                return false;
+              }
+            }
+
+            // CHECK 2: Always show active cyclones
+            if (cyclone.isActive) return true;
+
+            // CHECK 3: Show just-ended cyclones (within ~1 day)
+            if (cyclone.status === 'just_ended') return true;
+
+            // CHECK 4: Show recently ended cyclones (within 3 days grace period)
+            // Tropical systems dissipate quickly — 3 days is generous
+            if (cyclone.daysSinceEnd !== null && cyclone.daysSinceEnd <= 3) return true;
+
+            // CHECK 5: Filter out cyclones that ended more than 3 days ago
+            if (cyclone.daysSinceEnd !== null && cyclone.daysSinceEnd > 3) {
+              console.log(`  ⏭️ Filtering out ended cyclone: "${cyclone.name}" (ended ${cyclone.daysSinceEnd} days ago)`);
+              return false;
+            }
+
+            // CHECK 6: Filter out very old cyclones that have stale data
+            if (cyclone.daysSinceStart !== null && cyclone.daysSinceStart > 30 && cyclone.freshness === 'stale') {
+              console.log(`  ⏭️ Filtering out stale cyclone: "${cyclone.name}" (started ${cyclone.daysSinceStart} days ago, stale)`);
+              return false;
+            }
+
+            // CHECK 7: If no toDate but started a long time ago, likely old
+            if (cyclone.daysSinceStart !== null && cyclone.daysSinceStart > 60 && cyclone.daysSinceEnd === null) {
+              console.log(`  ⏭️ Filtering out old cyclone with no end date: "${cyclone.name}" (started ${cyclone.daysSinceStart} days ago)`);
+              return false;
+            }
+
+            return true;
+          });
+
+        console.log(`✅ Processed ${cyclones.length} active cyclones/hurricanes/typhoons from GDACS`);
+
+        return {
+          type: 'cyclones',
+          timestamp: new Date().toISOString(),
+          count: cyclones.length,
+          features: cyclones
+        };
       }
-
-      console.log(`Processing ${data.features.length} potential cyclone features`);
-
-      const cyclones = data.features
-        .filter(f => f.properties && f.geometry?.coordinates)
-        .map(f => {
-          const props = f.properties;
-          const coords = f.geometry.coordinates;
-
-          let windSpeed = 0;
-          if (props.windspeed !== undefined && props.windspeed !== null) {
-            windSpeed = parseInt(props.windspeed) || parseFloat(props.windspeed) || 0;
-          }
-
-          const eventName = props.eventname || props.name || `Tropical System ${props.eventid}`;
-          let stormType = 'Tropical Depression';
-
-          const nameLower = eventName.toLowerCase();
-          if (nameLower.includes('hurricane')) stormType = 'Hurricane';
-          else if (nameLower.includes('typhoon')) stormType = 'Typhoon';
-          else if (nameLower.includes('cyclone')) stormType = 'Cyclone';
-          else if (nameLower.includes('storm')) stormType = 'Tropical Storm';
-          else if (windSpeed > 0) {
-            if (windSpeed >= 119) stormType = 'Hurricane/Typhoon';
-            else if (windSpeed >= 63) stormType = 'Tropical Storm';
-          }
-
-          // ── Saffir-Simpson classification ──
-          let saffirSimpson = '';
-          if (windSpeed >= 252) saffirSimpson = 'Category 5 — Catastrophic';
-          else if (windSpeed >= 209) saffirSimpson = 'Category 4 — Devastating';
-          else if (windSpeed >= 178) saffirSimpson = 'Category 3 — Major';
-          else if (windSpeed >= 154) saffirSimpson = 'Category 2 — Extensive';
-          else if (windSpeed >= 119) saffirSimpson = 'Category 1 — Dangerous';
-          else if (windSpeed >= 63) saffirSimpson = 'Tropical Storm';
-          else saffirSimpson = 'Tropical Depression';
-
-          // ── Beaufort Scale ──
-          let beaufort = 0;
-          const wsKnots = windSpeed * 0.539957;
-          if (wsKnots >= 64) beaufort = 12;
-          else if (wsKnots >= 56) beaufort = 11;
-          else if (wsKnots >= 48) beaufort = 10;
-          else if (wsKnots >= 41) beaufort = 9;
-          else if (wsKnots >= 34) beaufort = 8;
-          else if (wsKnots >= 28) beaufort = 7;
-          else if (wsKnots >= 22) beaufort = 6;
-
-          // ── Movement description ──
-          const speed = parseFloat(props.speed || 0);
-          const direction = parseFloat(props.direction || 0);
-          let movementDesc = '';
-          if (speed > 0) {
-            const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-            const dirIndex = Math.round(((direction % 360) / 22.5)) % 16;
-            movementDesc = `Moving ${dirs[dirIndex]} at ${speed.toFixed(0)} km/h`;
-          }
-
-          // ── Pressure classification ──
-          const pressure = parseInt(props.pressure || 0);
-          let pressureDesc = '';
-          if (pressure > 0) {
-            if (pressure < 920) pressureDesc = 'Extremely Low — Violent';
-            else if (pressure < 945) pressureDesc = 'Very Low — Intense';
-            else if (pressure < 965) pressureDesc = 'Low — Strong';
-            else if (pressure < 990) pressureDesc = 'Below Normal — Moderate';
-            else pressureDesc = 'Near Normal';
-          }
-
-          // ── Duration in days ──
-          let durationDays = null;
-          if (props.fromdate) {
-            const from = new Date(props.fromdate);
-            const to = props.todate ? new Date(props.todate) : new Date();
-            durationDays = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)));
-          }
-
-          return {
-            id: `gdacs_tc_${props.eventid || Math.random()}`,
-            type: 'cyclone',
-            name: eventName,
-            coordinates: coords,
-            latitude: coords[1],
-            longitude: coords[0],
-            alertLevel: props.alertlevel || 'Yellow',
-            alertScore: parseFloat(props.alertscore || 0),
-            category: props.tc_category || this.getCycloneCategory(windSpeed),
-            windSpeed: windSpeed,
-            pressure: pressure || null,
-            direction: direction,
-            speed: speed,
-            country: props.country || this.extractCountryName(props.affectedcountries?.[0]) || 'Ocean',
-            affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
-            population: parseInt(props.population || 0),
-            fromDate: props.fromdate,
-            toDate: props.todate,
-            source: 'GDACS',
-            stormType: stormType,
-            isActive: !props.todate || new Date(props.todate) > new Date(),
-            severity: props.severitydata?.severity || props.severity || windSpeed,
-            description: props.description || `${stormType} with winds ${windSpeed} km/h`,
-            // ── NEW v5.1 FIELDS ──
-            url: props.url?.report || props.url?.details || props.link || '',
-            episodeId: props.episodeid || null,
-            htmlDescription: props.htmldescription || '',
-            iso3: props.iso3 || props.countryiso || '',
-            lastUpdate: props.lastupdate || props.modified || new Date().toISOString(),
-            durationDays: durationDays,
-            saffirSimpson: saffirSimpson,
-            beaufort: beaufort,
-            movementDesc: movementDesc,
-            pressureDesc: pressureDesc,
-            affectedArea: parseInt(props.affectedarea || 0),
-            glide: props.glide || '',
-            eventId: props.eventid || '',
-            maxWindRadius: parseInt(props.maxwindradius || 0),
-            iconUrl: props.icon || ''
-          };
-        });
-
-      console.log(`✅ Processed ${cyclones.length} cyclones/hurricanes/typhoons from GDACS`);
-
-      return {
-        type: 'cyclones',
-        timestamp: new Date().toISOString(),
-        count: cyclones.length,
-        features: cyclones
-      };
-    }
 
   getCycloneCategory(windSpeed) {
     if (windSpeed >= 252) return 'Category 5';

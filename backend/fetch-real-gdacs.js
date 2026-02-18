@@ -108,74 +108,124 @@ class DataFixer {
 
   // Fix GDACS Cyclones (filter out non-cyclones)
   async fixCyclonesData() {
-    this.log('\n2. FIXING CYCLONES DATA', 'yellow');
-    console.log('─'.repeat(50));
-    
-    try {
-      const url = 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH';
+      this.log('\n2. FIXING CYCLONES DATA', 'yellow');
+      console.log('─'.repeat(50));
       
-      this.log('Fetching all GDACS events...', 'cyan');
-      const response = await axios.get(url, { timeout: 15000 });
-      
-      const allEvents = response.data.features || [];
-      
-      // Filter for REAL tropical cyclones (TC with wind speed > 0)
-      const realCyclones = allEvents
-        .filter(f => 
-          f.properties && 
-          f.properties.eventtype === 'TC' && 
-          f.properties.windspeed > 0 &&
-          f.geometry?.coordinates
-        )
-        .map(f => {
-          const props = f.properties;
-          const coords = f.geometry.coordinates;
-          
-          return {
-            id: `gdacs_tc_${props.eventid || Math.random()}`,
-            type: 'cyclone',
-            name: props.eventname || props.name || 'Cyclone',
-            coordinates: coords,
-            latitude: coords[1],
-            longitude: coords[0],
-            alertLevel: props.alertlevel || 'Green',
-            category: props.tc_category || this.getCycloneCategory(props.windspeed),
-            windSpeed: parseInt(props.windspeed || 0),
-            pressure: parseInt(props.pressure || 0),
-            direction: props.direction || 0,
-            speed: props.speed || 0,
-            country: props.country || '',
-            affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
-            fromDate: props.fromdate,
-            toDate: props.todate,
-            source: 'GDACS'
-          };
-        });
+      try {
+        const url = 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH';
+        
+        this.log('Fetching all GDACS events...', 'cyan');
+        const response = await axios.get(url, { timeout: 15000 });
+        
+        const allEvents = response.data.features || [];
+        const now = new Date();
+        
+        // Filter for REAL tropical cyclones (TC with wind speed > 0)
+        const realCyclones = allEvents
+          .filter(f => 
+            f.properties && 
+            f.properties.eventtype === 'TC' && 
+            f.properties.windspeed > 0 &&
+            f.geometry?.coordinates
+          )
+          .map(f => {
+            const props = f.properties;
+            const coords = f.geometry.coordinates;
 
-      this.log(`Found ${realCyclones.length} REAL cyclones (from ${allEvents.length} total events)`, 'cyan');
-      
-      const cycloneData = {
-        type: 'cyclones',
-        timestamp: new Date().toISOString(),
-        count: realCyclones.length,
-        features: realCyclones
-      };
+            // Compute event status (same logic as server.js computeEventStatus)
+            const fromDate = props.fromdate ? new Date(props.fromdate) : null;
+            const toDate = props.todate ? new Date(props.todate) : null;
+            const isCurrent = props.iscurrent === 'true' || props.iscurrent === true;
 
-      await this.redis.set('data:cyclones', JSON.stringify(cycloneData), { EX: 600 });
-      this.log(`✓ Fixed! Stored ${realCyclones.length} real cyclones`, 'green');
-      
-      if (realCyclones.length > 0) {
-        console.log('\nSample real cyclone:');
-        const sample = realCyclones[0];
-        console.log(`  Name: ${sample.name}`);
-        console.log(`  Wind: ${sample.windSpeed} km/h`);
-        console.log(`  Category: ${sample.category}`);
+            let isActive = true;
+            let status = 'active';
+            let daysSinceEnd = null;
+            let daysSinceStart = null;
+
+            if (fromDate) {
+              daysSinceStart = Math.floor((now - fromDate) / (1000 * 60 * 60 * 24));
+            }
+            if (toDate && toDate.getTime() < now.getTime()) {
+              daysSinceEnd = Math.floor((now - toDate) / (1000 * 60 * 60 * 24));
+              isActive = false;
+              status = daysSinceEnd <= 1 ? 'just_ended' : 'ended';
+            }
+            if (isCurrent) {
+              isActive = true;
+              status = 'active';
+            }
+            
+            return {
+              id: `gdacs_tc_${props.eventid || Math.random()}`,
+              type: 'cyclone',
+              name: props.eventname || props.name || 'Cyclone',
+              coordinates: coords,
+              latitude: coords[1],
+              longitude: coords[0],
+              alertLevel: props.alertlevel || 'Green',
+              category: props.tc_category || this.getCycloneCategory(props.windspeed),
+              windSpeed: parseInt(props.windspeed || 0),
+              pressure: parseInt(props.pressure || 0),
+              direction: props.direction || 0,
+              speed: props.speed || 0,
+              country: props.country || '',
+              affectedCountries: this.normalizeAffectedCountries(props.affectedcountries, props.country),
+              fromDate: props.fromdate,
+              toDate: props.todate,
+              source: 'GDACS',
+              isActive: isActive,
+              status: status,
+              daysSinceEnd: daysSinceEnd,
+              daysSinceStart: daysSinceStart
+            };
+          })
+          // ── STALENESS FILTER (was missing before!) ──
+          .filter(cyclone => {
+            // Always show active cyclones
+            if (cyclone.isActive) return true;
+            // Show just-ended (within ~1 day)
+            if (cyclone.status === 'just_ended') return true;
+            // Show recently ended (within 3 days)
+            if (cyclone.daysSinceEnd !== null && cyclone.daysSinceEnd <= 3) return true;
+            // Filter out everything else that has ended
+            if (cyclone.daysSinceEnd !== null && cyclone.daysSinceEnd > 3) {
+              this.log(`  ⏭️ Filtering out ended cyclone: "${cyclone.name}" (ended ${cyclone.daysSinceEnd} days ago)`, 'cyan');
+              return false;
+            }
+            // Filter out old cyclones with no end date
+            if (cyclone.daysSinceStart !== null && cyclone.daysSinceStart > 60) {
+              this.log(`  ⏭️ Filtering out old cyclone: "${cyclone.name}" (started ${cyclone.daysSinceStart} days ago)`, 'cyan');
+              return false;
+            }
+            return true;
+          });
+
+        this.log(`Found ${realCyclones.length} REAL active cyclones (from ${allEvents.length} total events)`, 'cyan');
+        
+        const cycloneData = {
+          type: 'cyclones',
+          timestamp: new Date().toISOString(),
+          count: realCyclones.length,
+          features: realCyclones
+        };
+
+        await this.redis.set('data:cyclones', JSON.stringify(cycloneData), { EX: 600 });
+        this.log(`✓ Fixed! Stored ${realCyclones.length} real active cyclones`, 'green');
+        
+        if (realCyclones.length > 0) {
+          console.log('\nSample real cyclone:');
+          const sample = realCyclones[0];
+          console.log(`  Name: ${sample.name}`);
+          console.log(`  Wind: ${sample.windSpeed} km/h`);
+          console.log(`  Category: ${sample.category}`);
+          console.log(`  Active: ${sample.isActive}`);
+          console.log(`  Status: ${sample.status}`);
+        }
+        
+      } catch (error) {
+        this.log(`✗ Error fixing cyclones: ${error.message}`, 'red');
       }
-      
-    } catch (error) {
-      this.log(`✗ Error fixing cyclones: ${error.message}`, 'red');
     }
-  }
 
   getCycloneCategory(windSpeed) {
     if (windSpeed >= 252) return 'Category 5';
